@@ -168,7 +168,8 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
   }
   const ports = extraPorts(ctx, forwards);
   mkdirSync(proxyDir(ctx), { recursive: true });
-  writeFileSync(join(proxyDir(ctx), "Caddyfile"), caddyfile([...servers.values()], networks.flatMap((n) => n.subnets)));
+  const config = caddyfile([...servers.values()], networks.flatMap((n) => n.subnets));
+  writeFileSync(join(proxyDir(ctx), "Caddyfile"), config);
 
   // Published ports are fixed when a container is made, so a change means a new proxy
   if (proxy && (proxy.labels["orca.port"] !== String(port) || proxy.labels["orca.ports"] !== ports.join(","))) {
@@ -205,7 +206,10 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
   }
 
   for (const n of networks) if (!proxy.networks.includes(n.name)) await docker(ctx, ["network", "connect", n.name, PROXY]);
-  if (reload) await docker(ctx, ["exec", PROXY, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]);
+  // A reload is given the config itself, not the mounted file: Docker Desktop's Mac mounts can
+  // go on reporting a file's old size after it grows, so Caddy read it cut short ("unexpected EOF")
+  if (reload)
+    await docker(ctx, ["exec", PROXY, "sh", "-c", 'printf %s "$1" > /tmp/Caddyfile && exec caddy reload --config /tmp/Caddyfile --adapter caddyfile', "sh", config]);
   if (forwards.some((f) => f.urls.some((u) => parseAddress(u).https))) await copyCa(ctx);
   return { port, ports, running: true };
 }

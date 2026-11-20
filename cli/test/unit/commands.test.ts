@@ -309,3 +309,11 @@ test("changelog entries include the build's own day, and none without a date", (
   expect(changesSince(log, "2026-11-01")).toEqual(["Same day."]);
   expect(changesSince(log, "")).toEqual([]);
 });
+
+test("stop doesn't list runc's refusal as a terminal when the container lost its folders", async () => {
+  const t = running();
+  t.state.containers[0].lostFolders = true;
+  await stop(t.ctx, "app", {});
+  expect(t.output()).not.toContain("OCI runtime");
+  expect(t.state.containers[0].running).toBe(false);
+});

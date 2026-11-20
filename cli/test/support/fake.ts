@@ -22,6 +22,8 @@ export type FakeContainer = {
   cpus?: number;
   /** What docker stats says it uses, e.g. "2.1GiB" */
   used?: string;
+  /** Its folders from the Mac went away under it (Docker Desktop's file sharing failing), so runc refuses every exec */
+  lostFolders?: boolean;
 };
 
 export type FakeNetwork = { name: string; subnet: string; labels: Record<string, string> };
@@ -153,6 +155,13 @@ export function fakeDocker(state: FakeState) {
         if (c) (c.running = false), (c.up = false);
         return c ? ok() : fail("No such container");
       }
+      // Docker prints runc's refusal on stdout
+      if (cmd === "exec" && find(rest.find((a) => !a.startsWith("-") && !a.includes("=")) ?? "")?.lostFolders)
+        return {
+          code: 126,
+          stdout: "OCI runtime exec failed: exec failed: unable to start container process: current working directory is outside of container mount namespace root -- possible container breakout detected: unknown\n",
+          stderr: "",
+        };
       // The mark and the terminals together, as orca asks for them (terminals.ts)
       if (cmd === "exec" && rest.some((a) => a.includes("list-sessions"))) {
         const c = find(rest[0]);

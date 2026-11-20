@@ -10,13 +10,14 @@ import {
   listContainers,
   migrated,
   readFolder,
+  lostFoldersError,
   recordDir,
   volumeName,
 } from "../projects";
 import { readConfig } from "../config";
 import { applyCreation, checkWithout, containerArgs, workspaceFile } from "../features";
 import { applySettings, describeResources, effective } from "../box-settings";
-import { allForwards, ensureNetwork, syncProxy } from "../proxy";
+import { allForwards, ensureNetwork, PROXY, syncProxy } from "../proxy";
 import { activity, canKeepUp, describe, hasTerminals, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
 
 export type StartOptions = {
@@ -76,7 +77,12 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   // The project's own network, which only the forwards proxy also joins
   const network = await ensureNetwork(ctx, name);
   if (existing && !opts.fresh && !existing.networks.includes(network)) await docker(ctx, ["network", "connect", network, container]);
-  if (allForwards(ctx).length) await syncProxy(ctx);
+  // Forwards are an extra: a proxy that can't be brought in line never keeps a project from starting
+  if (allForwards(ctx).length)
+    await syncProxy(ctx).catch((e: unknown) => {
+      const fix = e instanceof OrcaError && e.fix ? `\n  ${e.fix}` : "";
+      ctx.print(`Forwards may not work: ${e instanceof Error ? e.message : String(e)}${fix}\n  Starting ${name} anyway. The next orca start tries again; to start the proxy afresh: docker rm -f ${PROXY}\n`);
+    });
 
   if (existing && opts.fresh) {
     if (existing.running) {
@@ -143,7 +149,9 @@ async function up(ctx: Context, { name, container, folder }: Started): Promise<n
 
 /** Attaches this window to a terminal: the one asked for, a new one, or one the user picks. */
 async function openTerminal(ctx: Context, { name, container, folder, keepsUp }: Started, opts: StartOptions): Promise<number> {
-  const open = await listTerminals(ctx, container);
+  const { terminals: open, broken } = await activity(ctx, container);
+  if (broken === "lost-folders") throw lostFoldersError(container);
+  if (broken) throw new OrcaError(`Docker can't run anything in ${container}.`, `Stop it and start it again: orca stop ${name}, then orca start ${tilde(ctx, folder)}`);
   let pick = opts.terminal ?? null;
   if (!pick && !opts.new && !opts.command && open.length && ctx.choose) {
     const options = [{ label: "New terminal", value: "" }, ...open.map((t) => ({ label: describe(t), value: t.name }))];

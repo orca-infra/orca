@@ -1,5 +1,5 @@
 import type { Context } from "./context";
-import type { Container } from "./docker";
+import { execFailed, lostFolders, type Container } from "./docker";
 
 /**
  * A terminal in a project's container: a tmux session, so it keeps running when its window
@@ -23,8 +23,11 @@ export const hasTerminals = (c: Container) => c.labels["orca.terminals"] === "1"
 /** Containers whose image can be kept up (`orca up`); older ones stop a minute after their last terminal. */
 export const canKeepUp = (c: Container) => c.labels["orca.up"] === "1";
 
-/** What keeps a running container up: its open terminals, and whether `orca up` marked it. */
-export type Activity = { terminals: Terminal[]; up: boolean };
+/**
+ * What keeps a running container up: its open terminals, and whether `orca up` marked it.
+ * `broken` says why nothing can run in it, when docker can't run commands there at all.
+ */
+export type Activity = { terminals: Terminal[]; up: boolean; broken: "lost-folders" | "exec-failed" | null };
 
 /** The mark `orca up` leaves, in a folder emptied on every start (container-features.md) */
 const UP = "/run/orca/up";
@@ -35,6 +38,8 @@ const FORMAT = "#{session_name}|#{session_attached}|#{session_activity}|#{pane_c
 export async function activity(ctx: Context, container: string): Promise<Activity> {
   // Both in one docker exec, as the dashboard asks every few seconds
   const r = await ctx.docker.run(["exec", container, "sh", "-c", `test -e ${UP} && echo up; tmux list-sessions -F '${FORMAT}'`]);
+  // Docker prints a failed exec's reason on stdout, which isn't a terminal
+  if (execFailed(r)) return { terminals: [], up: false, broken: lostFolders(r) ? "lost-folders" : "exec-failed" };
   const lines = r.stdout.split("\n").filter(Boolean);
   const terminals = lines
     .filter((line) => line !== "up")
@@ -45,7 +50,7 @@ export async function activity(ctx: Context, container: string): Promise<Activit
       return { name, attached: Number(attached) || 0, active: Number(active) * 1000 || 0, command, title: t && t !== host ? t : null };
     })
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  return { terminals, up: lines.includes("up") };
+  return { terminals, up: lines.includes("up"), broken: null };
 }
 
 /** The terminals open in a running container. */

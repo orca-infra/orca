@@ -325,3 +325,27 @@ test("leaving a terminal says nothing about stopping while it's kept up or other
     expect(t.state.containers[0].running).toBe(true);
   }
 });
+
+test("a container that lost its folders from the Mac says so, and how to recover, instead of opening a terminal", async () => {
+  const t = fakeContext();
+  const dir = folder(t.home);
+  t.state.containers.push({ name: "orca-app", running: true, labels: TU, workspace: dir, home: homeOf(t), terminals: [term("1")], lostFolders: true });
+  await expect(start(t.ctx, dir, {})).rejects.toMatchObject({
+    message: expect.stringContaining("can't reach its folders from the Mac"),
+    fix: expect.stringContaining("Restart Docker Desktop"),
+  });
+  expect(t.attached).toHaveLength(0);
+});
+
+test("a forwards proxy that can't take its new config doesn't keep a project from starting", async () => {
+  const t = fakeContext();
+  const other = folder(t.home, "web");
+  const record = join(t.ctx.orcaDir, "projects/web");
+  mkdirSync(join(record, "home"), { recursive: true });
+  writeFileSync(join(record, "project-path"), other + "\n");
+  writeFileSync(join(record, "forwards"), "3000\n");
+  t.state.containers.push({ name: "orca-proxy", running: true, labels: { "orca.proxy": "true", "orca.port": "7320", "orca.ports": "" }, networks: [], lostFolders: true });
+  await start(t.ctx, folder(t.home), {});
+  expect(t.output()).toContain("Forwards may not work");
+  expect(t.attached).toHaveLength(1);
+});

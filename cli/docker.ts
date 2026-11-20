@@ -3,6 +3,15 @@
 
 export type Result = { code: number; stdout: string; stderr: string };
 
+/** docker exec couldn't run anything in the container (Docker prints why on stdout). */
+export const execFailed = (r: Result) => r.code !== 0 && /OCI runtime exec failed|unable to start container process/.test(r.stdout + r.stderr);
+
+/**
+ * The container's folders from the Mac (/workspace, ~) went away from under it, so runc refuses
+ * every exec there, as it does when Docker Desktop's file sharing stops working.
+ */
+export const lostFolders = (r: Result) => r.code !== 0 && /outside of container mount namespace root/.test(r.stdout + r.stderr);
+
 export interface Docker {
   /** Runs docker and captures its output. */
   run(args: string[]): Promise<Result>;

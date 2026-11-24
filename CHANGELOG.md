@@ -2,9 +2,9 @@
 
 What people using Orca should know, newest first: anything they have to do (marked **Action needed**), changes they'd notice, and new things worth knowing about. Everything else is in the git history. `orca update` shows the entries since the build it replaces; updating Orca in a project (`/install-orca`) shows the ones since that project's last update.
 
-## 2026-11-20
+## 2026-11-24
 
-- When Docker Desktop's file sharing stops working, a container loses its folders from the Mac (`/workspace` and `~`), so logins, `claude` and everything else in it seem to vanish. `orca start` now says that's what happened, and that restarting Docker Desktop is the fix (your files on the Mac are untouched), instead of listing Docker's error as a terminal.
+- Before opening a terminal, `orca start` checks the container has what it needs: Docker can run a command in it, and the folders orca mounts from the Mac are there. If not, it says what's missing and what to try, instead of listing Docker's error as a terminal. A failing `docker` command now always shows what Docker said.
 - When a step `orca start` can do without fails (the forwards proxy, the project's own network, applying box settings), it says what failed and what going on without it means, and asks whether to start anyway, instead of failing.
 - The workspace file now says which repos it includes and what its search skips (hidden folders, `node_modules`). If it's yours (orca's first line removed), `orca start` says once when it doesn't list a repo, or lists a folder that's gone.
 - Going back when an image is broken: `orca image ls` shows the current image, the previous one and the published ones (now tagged by date and commit too), and `orca image use previous` (or a published one) switches, offering to remake stopped projects' containers on it. `orca start --fresh --image <name>` does it for one project.

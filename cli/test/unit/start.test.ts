@@ -302,13 +302,23 @@ test("leaving a terminal says nothing about stopping while it's kept up or other
   }
 });
 
-test("a container that lost its folders from the Mac says so, and how to recover, instead of opening a terminal", async () => {
+test("a container Docker can't run a command in isn't opened: it says it isn't ready, with Docker's message, and what to do", async () => {
   const t = fakeContext();
   const dir = folder(t.home);
-  t.state.containers.push({ name: "orca-app", running: true, labels: TU, workspace: dir, home: homeOf(t), terminals: [term("1")], lostFolders: true });
+  t.state.containers.push({ name: "orca-app", running: true, labels: TU, workspace: dir, home: homeOf(t), terminals: [term("1")], refusesExec: true });
   await expect(start(t.ctx, dir, {})).rejects.toMatchObject({
-    message: expect.stringContaining("can't reach its folders from the Mac"),
-    fix: expect.stringContaining("Restart Docker Desktop"),
+    message: expect.stringContaining("orca-app isn't ready: Docker couldn't run a command in it (OCI runtime exec failed"),
+    fix: "Try: orca stop app, then orca start again. If it still isn't ready, restart Docker Desktop. To work meanwhile: orca fallback",
+  });
+  expect(t.attached).toHaveLength(0);
+});
+
+test("a container without a folder orca mounts in it isn't opened, saying which and where it's from", async () => {
+  const t = fakeContext();
+  const dir = folder(t.home);
+  t.state.containers.push({ name: "orca-app", running: true, labels: TU, workspace: dir, home: homeOf(t), missing: ["/home/node"] });
+  await expect(start(t.ctx, dir, {})).rejects.toMatchObject({
+    message: expect.stringContaining("orca-app isn't ready: /home/node (~/.orca/projects/app/home on this Mac) isn't there inside it"),
   });
   expect(t.attached).toHaveLength(0);
 });
@@ -319,27 +329,27 @@ function proxyBroken(answers: string[] = []) {
   mkdirSync(join(record, "home"), { recursive: true });
   writeFileSync(join(record, "project-path"), folder(t.home, "web") + "\n");
   writeFileSync(join(record, "forwards"), "3000\n");
-  t.state.containers.push({ name: "orca-proxy", running: true, labels: { "orca.proxy": "true", "orca.port": "7320", "orca.ports": "" }, networks: [], lostFolders: true });
+  t.state.containers.push({ name: "orca-proxy", running: true, labels: { "orca.proxy": "true", "orca.port": "7320", "orca.ports": "" }, networks: [], refusesExec: true });
   return t;
 }
 
 test("a forwards proxy that fails says what failed and what skipping it means, and starts on a yes", async () => {
   const t = proxyBroken([""]);
   await start(t.ctx, folder(t.home), {});
-  expect(t.output()).toContain("The forwards proxy couldn't be brought up to date: orca-proxy can't reach its folders");
+  expect(t.output()).toContain("The forwards proxy couldn't be brought up to date: docker exec failed: OCI runtime exec failed");
   expect(t.output()).toContain("app itself is unaffected");
   expect(t.attached).toHaveLength(1);
 });
 
 test("a no to starting without the proxy stops with its error", async () => {
   const t = proxyBroken(["n"]);
-  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ message: expect.stringContaining("orca-proxy can't reach its folders") });
+  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ message: expect.stringContaining("docker exec failed") });
   expect(t.attached).toHaveLength(0);
 });
 
 test("with no one to ask, a failing proxy stops the start with its error", async () => {
   const t = proxyBroken();
-  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ fix: expect.stringContaining("Restart Docker Desktop") });
+  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ message: expect.stringContaining("docker exec failed") });
 });
 
 test("a project network that can't be made is skipped on a yes: a new container goes on Docker's default network", async () => {

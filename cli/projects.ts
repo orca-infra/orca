@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { beforeHomes, labelGeneration } from "./compat";
 import { OrcaError, projectsDir, type Context } from "./context";
-import { lostFolders, parseContainer, type Container } from "./docker";
+import { parseContainer, type Container } from "./docker";
 
 /**
  * A project is a record, ~/.orca/projects/<name>/, holding its home (mounted as ~) and
@@ -108,20 +108,13 @@ export async function inspectImage(ctx: Context, ref: string): Promise<Image | n
   return { id: img.Id, created: img.Created, generation: labelGeneration(labels) };
 }
 
-/** A container that can't see its folders from the Mac; the files there are untouched. */
-export const lostFoldersError = (container: string) =>
-  new OrcaError(
-    `${container} can't reach its folders from the Mac (/workspace and ~), so nothing in it can run. Docker's file sharing has stopped working for it; the files on the Mac are untouched.`,
-    "Restart Docker Desktop (quit it from its menu bar icon and open it again), then orca start again. To work meanwhile: https://github.com/orca-infra/orca/blob/main/FALLBACKS.md",
-  );
-
 /** Runs a docker command that must succeed, turning the common failures into fixes. */
 export async function docker(ctx: Context, args: string[]): Promise<string> {
   const r = await ctx.docker.run(args);
   if (r.code === 0) return r.stdout;
-  if (lostFolders(r) && args[0] === "exec") throw lostFoldersError(args[1]);
   if (r.code === 127) throw new OrcaError("Docker isn't installed.", "Install Docker Desktop: https://docs.docker.com/desktop/");
   if (/Cannot connect to the Docker daemon|Is the docker daemon running/i.test(r.stderr))
     throw new OrcaError("Docker isn't running.", "Start Docker Desktop, then try again.");
-  throw new OrcaError(`docker ${args[0]} failed: ${r.stderr.trim() || `exit ${r.code}`}`);
+  // Docker says why on stderr, or for some failures (an exec it couldn't start) on stdout
+  throw new OrcaError(`docker ${args[0]} failed: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`}`);
 }

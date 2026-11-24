@@ -320,7 +320,7 @@ test("changelog entries include the build's own day, and none without a date", (
 
 test("stop doesn't list runc's refusal as a terminal when the container lost its folders", async () => {
   const t = running();
-  t.state.containers[0].lostFolders = true;
+  t.state.containers[0].refusesExec = true;
   await stop(t.ctx, "app", {});
   expect(t.output()).not.toContain("OCI runtime");
   expect(t.state.containers[0].running).toBe(false);

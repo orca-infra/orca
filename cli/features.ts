@@ -11,12 +11,16 @@ import { resourceArgs, type Resources } from "./box-settings";
 /** `network` is null when the project's own couldn't be set up: Docker's default then */
 export type Box = { name: string; folder: string; home: string; network: string | null; resources: Resources };
 
+/** The folders from the Mac in every container orca creates: the project folder and its own home; everything else is the image's */
+export const mounts = (b: Pick<Box, "folder" | "home">) => [
+  { source: b.folder, target: "/workspace" },
+  { source: b.home, target: "/home/node" },
+];
+
 /** docker run arguments for every container orca creates (the every-time features). */
 export function containerArgs(b: Box): string[] {
   return [
-    // The project folder and its own home; everything else in the container is the image's
-    "-v", `${b.folder}:/workspace`,
-    "-v", `${b.home}:/home/node`,
+    ...mounts(b).flatMap((m) => ["-v", `${m.source}:${m.target}`]),
     // Its own network, which only the forwards proxy also joins
     ...(b.network ? ["--network", b.network] : []),
     // Its memory and CPUs (box settings): 8 GB and 4 unless set

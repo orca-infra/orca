@@ -11,16 +11,15 @@ import {
   listContainers,
   migrated,
   readFolder,
-  lostFoldersError,
   recordDir,
 } from "../projects";
 import { readConfig } from "../config";
 import { built, ensureImage } from "../images";
-import { applyCreation, checkWithout, containerArgs, workspaceFile } from "../features";
+import { applyCreation, checkWithout, containerArgs, mounts, workspaceFile } from "../features";
 import { applySettings, describeResources, effective } from "../box-settings";
 import { allForwards, ensureNetwork, PROXY, syncProxy } from "../proxy";
 import { beforeHomes, checkSupported, hasTerminals, TERMINALS } from "../compat";
-import { activity, describe, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
+import { activity, checkReady, describe, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
 
 export type StartOptions = {
   fresh?: boolean;
@@ -191,6 +190,7 @@ type Started = { name: string; container: string; folder: string };
 
 /** Marks a started container to keep running, terminals or not, until it's stopped. */
 async function up(ctx: Context, { name, container, folder }: Started): Promise<number> {
+  await checkReady(ctx, name, container, mounts({ folder, home: homeDir(ctx, name) }));
   if (!(await keepUp(ctx, container)))
     throw new OrcaError(`${container} couldn't be marked to keep running.`, `Recreate it (keeps the folder and the home): orca stop ${name}, then orca start --fresh ${tilde(ctx, folder)}`);
   ctx.print(`${name} is up: it keeps running, with or without terminals, until orca stop ${name}.`);
@@ -199,9 +199,8 @@ async function up(ctx: Context, { name, container, folder }: Started): Promise<n
 
 /** Attaches this window to a terminal: the one asked for, a new one, or one the user picks. */
 async function openTerminal(ctx: Context, { name, container, folder }: Started, opts: StartOptions): Promise<number> {
-  const { terminals: open, broken } = await activity(ctx, container);
-  if (broken === "lost-folders") throw lostFoldersError(container);
-  if (broken) throw new OrcaError(`Docker can't run anything in ${container}.`, `Stop it and start it again: orca stop ${name}, then orca start ${tilde(ctx, folder)}`);
+  await checkReady(ctx, name, container, mounts({ folder, home: homeDir(ctx, name) }));
+  const open = await listTerminals(ctx, container);
   let pick = opts.terminal ?? null;
   if (!pick && !opts.new && !opts.command && open.length && ctx.choose) {
     const options = [{ label: "New terminal", value: "" }, ...open.map((t) => ({ label: describe(t), value: t.name }))];

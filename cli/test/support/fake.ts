@@ -22,8 +22,10 @@ export type FakeContainer = {
   cpus?: number;
   /** What docker stats says it uses, e.g. "2.1GiB" */
   used?: string;
-  /** Its folders from the Mac went away under it (Docker Desktop's file sharing failing), so runc refuses every exec */
-  lostFolders?: boolean;
+  /** Docker can't run any command in it (here with runc's message for a working directory it can't reach) */
+  refusesExec?: boolean;
+  /** Mount targets that aren't there inside it, e.g. ["/home/node"] */
+  missing?: string[];
 };
 
 export type FakeNetwork = { name: string; subnet: string; labels: Record<string, string> };
@@ -168,16 +170,21 @@ export function fakeDocker(state: FakeState) {
         return c ? ok() : fail("No such container");
       }
       // Docker prints runc's refusal on stdout
-      if (cmd === "exec" && find(rest.find((a) => !a.startsWith("-") && !a.includes("=")) ?? "")?.lostFolders)
+      if (cmd === "exec" && find(rest.find((a) => !a.startsWith("-") && !a.includes("=")) ?? "")?.refusesExec)
         return {
           code: 126,
           stdout: "OCI runtime exec failed: exec failed: unable to start container process: current working directory is outside of container mount namespace root -- possible container breakout detected: unknown\n",
           stderr: "",
         };
+      // What a terminal needs, as orca checks it (checkReady): the folders it mounts
+      if (cmd === "exec" && rest.some((a) => a.includes("|| echo 'missing"))) {
+        const c = find(rest[0]);
+        return ok(["orca-ran", ...(c?.missing ?? []).map((m) => `missing ${m}`)].join("\n") + "\n");
+      }
       // The mark and the terminals together, as orca asks for them (terminals.ts)
       if (cmd === "exec" && rest.some((a) => a.includes("list-sessions"))) {
         const c = find(rest[0]);
-        const lines = [...(c?.up ? ["up"] : []), ...(c?.terminals ?? [])];
+        const lines = ["orca-ran", ...(c?.up ? ["up"] : []), ...(c?.terminals ?? [])];
         return { code: c?.terminals?.length ? 0 : 1, stdout: lines.map((l) => l + "\n").join(""), stderr: c?.terminals?.length ? "" : "no server running" };
       }
       if (cmd === "exec" && rest.includes("touch")) {

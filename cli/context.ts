@@ -1,8 +1,9 @@
+import { createServer } from "node:net";
+import { OrcaError } from "./errors";
 import { lookup } from "node:dns/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { realDocker, type Docker, type Result } from "./docker";
-import { show } from "./ui/show";
 
 /** One answer to a question asked with `choose`: what it shows, and what choosing it returns. */
 export type Option = { label: string; value: string };
@@ -26,6 +27,8 @@ export type Context = {
   host: (argv: string[]) => Promise<Result>;
   /** A hostname's addresses, looked up on the Mac as a browser there would; none if it doesn't resolve */
   lookup: (hostname: string) => Promise<string[]>;
+  /** Whether a port on the Mac's 127.0.0.1 is free to publish: false only when something listens on it */
+  portFree: (port: number) => Promise<boolean>;
   /** The web, for what's published on GitHub (images, orca's builds) */
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
 };
@@ -40,7 +43,8 @@ export function realContext(): Context {
     home,
     print: (line = "") => console.log(line),
     ask: interactive ? (q) => Promise.resolve(prompt(q) ?? "") : null,
-    choose: interactive ? (q, options) => show(join(orcaDir, "orca.log"), "choose", { question: q, options }) : null,
+    // Set by the entry point, which has the terminal UI (ui/show.tsx), when there's a terminal
+    choose: null,
     color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR,
     launch: async (argv) => {
       const proc = Bun.spawn(argv, { stdio: ["ignore", "ignore", "pipe"] });
@@ -57,6 +61,13 @@ export function realContext(): Context {
       }
     },
     fetch: (url, init) => fetch(url, init),
+    portFree: (port) =>
+      new Promise((resolve) => {
+        // Only "in use" means taken: ports below 1024 refuse an unprivileged listener on macOS,
+        // yet Docker publishes them
+        const server = createServer().once("error", (e: NodeJS.ErrnoException) => resolve(e.code !== "EADDRINUSE"));
+        server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
+      }),
     lookup: async (hostname) => {
       const timeout = new Promise<[]>((resolve) => setTimeout(() => resolve([]), 2000));
       const found = lookup(hostname, { all: true }).then((all) => all.map((a) => a.address), () => []);
@@ -65,17 +76,6 @@ export function realContext(): Context {
   };
 }
 
-export const projectsDir = (ctx: Context) => join(ctx.orcaDir, "projects");
-
-/** A failure the user can act on: what happened, and the command that fixes it. */
-export class OrcaError extends Error {
-  constructor(
-    message: string,
-    readonly fix?: string,
-  ) {
-    super(message);
-  }
-}
 
 /** Shows a host path the way the user would type it. */
 export function tilde(ctx: Context, path: string): string {

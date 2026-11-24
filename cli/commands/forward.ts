@@ -1,15 +1,19 @@
-import { existsSync, readdirSync } from "node:fs";
 import { readConfig } from "../config";
-import { OrcaError, projectsDir, tilde, type Context } from "../context";
-import { listContainers, containerName } from "../projects";
-import { allForwards, caFile, innerPort, parseAddress, pointsHere, readForwards, syncProxy, trustCommand, urlFor, writeForwards, type Address, type Forward } from "../proxy";
+import { OrcaError } from "../errors";
+import { tilde, type Context } from "../context";
+import { syncProxy, trustCommand } from "../proxy";
+import { containerName } from "../names";
+import { caFile } from "../state";
+import { listContainers } from "../containers";
+import { recordNames } from "../records";
+import { type Address, allForwards, type Forward, innerPort, parseAddress, pointsHere, readForwards, urlFor, writeForwards } from "../forwards";
 
 /** `url` adds an address for the port being added; `remove` is a port (the whole forward) or one address. */
 export type ForwardOptions = { project: string; add?: number; url?: string; remove?: number | string };
 
 /** Adds, removes or lists a project's forwards, then brings the proxy in line. */
 export async function forward(ctx: Context, opts: ForwardOptions): Promise<void> {
-  const names = existsSync(projectsDir(ctx)) ? readdirSync(projectsDir(ctx)) : [];
+  const names = recordNames(ctx);
   if (!names.includes(opts.project))
     throw new OrcaError(`There's no project named "${opts.project}".`, `Projects: ${names.join(", ") || "none yet"}`);
   const port = opts.add ?? (typeof opts.remove === "number" ? opts.remove : undefined);
@@ -88,7 +92,7 @@ async function change(ctx: Context, project: string, before: Forward[], after: F
 
 /** Refuses an address the proxy couldn't serve, or that another forward already has. */
 function checkAddress(ctx: Context, project: string, port: number, a: Address): Address {
-  const { proxyPort, servePort } = readConfig(ctx);
+  const { servePort } = readConfig(ctx);
   if (a.port === servePort) throw new OrcaError(`Port ${a.port} is the dashboard's (servePort), so ${a.url} can't be a forward.`, "Use a URL with another port.");
   if (a.https && innerPort(ctx, a.port) === 80)
     throw new OrcaError(`Port ${a.port} serves forwards over plain HTTP, so ${a.url} can't be HTTPS on it.`, "Use http:// with that port, or another port.");

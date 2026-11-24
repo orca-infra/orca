@@ -2,8 +2,9 @@ import { generation, olderFor } from "../compat";
 import { tilde, type Context } from "../context";
 import { keptBy, stateOf, symbol, IMAGE_UPDATE } from "../present";
 import { loadProjects } from "../projects";
-import { allForwards, proxyState, urlFor } from "../proxy";
+import { proxyState } from "../proxy";
 import { activities } from "../terminals";
+import { allForwards, urlFor } from "../forwards";
 
 export async function list(ctx: Context, opts: { json?: boolean }): Promise<void> {
   const projects = await loadProjects(ctx);

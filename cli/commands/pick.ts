@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { OrcaError, type Context } from "../context";
+import { OrcaError } from "../errors";
+import { type Context } from "../context";
 import { keptBy } from "../present";
-import { homeDir, loadProjects, type Project } from "../projects";
+import { loadProjects, type Project } from "../projects";
 import { activities } from "../terminals";
 import type { Choice } from "../ui/picker";
 import { show } from "../ui/show";
@@ -11,6 +11,7 @@ import { list } from "./list";
 import { create } from "./new";
 import { RECREATING, start } from "./start";
 import { stop } from "./stop";
+import { homeDir, uiLogFile } from "../state";
 
 /** `orca` on its own: the picker; without a terminal, the plain list instead. */
 export async function pick(ctx: Context): Promise<number> {
@@ -18,7 +19,7 @@ export async function pick(ctx: Context): Promise<number> {
   if (!ctx.ask) return list(ctx, {}).then(() => 0);
   const live = await activities(ctx, projects);
   const kept = Object.fromEntries([...live].map(([name, a]) => [name, keptBy(a)]));
-  const choice = (await show(join(ctx.orcaDir, "orca.log"), "picker", { projects, home: ctx.home, kept })) ?? { action: "quit" };
+  const choice = (await show(uiLogFile(ctx), "picker", { projects, home: ctx.home, kept })) ?? { action: "quit" };
   return act(ctx, projects, choice);
 }
 

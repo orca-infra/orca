@@ -11,28 +11,28 @@ orca's mark.
 ## At creation
 
 Done once, when orca creates a project's home, and never repeated (`CREATION` in
-`cli/features.ts`). Each can be left out, per project or for every new one (`optionalIds`).
+`cli/creation.ts`). Each can be left out, per project or for every new one (`optionalIds`).
 
 | Feature | For | Defined in |
 |---|---|---|
-| `git-identity` | Commits in the project are the user's, as on the Mac | `cli/features.ts` |
+| `git-identity` | Commits in the project are the user's, as on the Mac | `cli/creation.ts` |
 
 ## Every time
 
 Part of every container orca creates, so a change reaches an existing project when its container
-is recreated.
+is recreated. A test checks this list names every feature and mount in the code.
 
 From orca:
 
 | Feature | For | Defined in |
 |---|---|---|
-| Project folder | The project's files, mounted from the Mac | `containerArgs` in `cli/features.ts` |
-| Home | Logins, Claude memory and settings, and installed tools, kept per project on the Mac | `containerArgs` |
+| Project folder (`/workspace`) | The project's files, mounted from the Mac | `mounts` in `cli/container-spec.ts` |
+| Home (`/home/node`) | Logins, Claude memory and settings, and installed tools, kept per project on the Mac | `mounts` |
 | Network | Projects can't reach each other; only the forwards proxy joins | `containerArgs`, `cli/proxy.ts` |
 | Box settings | Memory and CPUs, per project or as defaults | `cli/box-settings.ts` |
 | Kept-up mark | Lets `orca up` keep the container running without terminals | `containerArgs`, `image/keepalive.sh` |
 | Project name | Terminal titles and Remote Control sessions named after the project | `containerArgs` |
-| `workspace-file` | Editors search and index each git repo in the project folder (optional). The search skips hidden folders and a built-in list (`SKIPPED`: `node_modules`); a file without orca's mark is the user's, and orca says once when it differs from the folder's repos | `workspaceFile` in `cli/features.ts` |
+| `workspace-file` | Editors search and index each git repo in the project folder (optional). The search skips hidden folders and a built-in list (`SKIPPED`: `node_modules`); a file without orca's mark is the user's, and orca says once when it differs from the folder's repos | `cli/workspace-file.ts` |
 
 From the image:
 

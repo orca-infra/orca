@@ -1,8 +1,10 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
-import { beforeHomes, labelGeneration } from "./compat";
-import { OrcaError, projectsDir, type Context } from "./context";
-import { parseContainer, type Container } from "./docker";
+import { basename } from "node:path";
+import { beforeHomes } from "./compat";
+import { type Context } from "./context";
+import { homeDir, ownWorkspaceDir } from "./state";
+import { listContainers, type Container } from "./containers";
+import { migrated, readFolder, recordNames } from "./records";
+import { latestImage } from "./images";
 
 /**
  * A project is a record, ~/.orca/projects/<name>/, holding its home (mounted as ~) and
@@ -26,22 +28,9 @@ export type Project = {
   outdated: boolean;
 };
 
-export const recordDir = (ctx: Context, name: string) => join(projectsDir(ctx), name);
-export const homeDir = (ctx: Context, name: string) => join(recordDir(ctx, name), "home");
-export const containerName = (name: string) => `orca-${name}`;
-
-export function readFolder(ctx: Context, name: string): string | null {
-  const file = join(recordDir(ctx, name), "project-path");
-  // Without a trailing slash, to match the folders Docker reports
-  return existsSync(file) ? readFileSync(file, "utf8").trim().replace(/(.)\/+$/, "$1") || null : null;
-}
-
 export async function loadProjects(ctx: Context): Promise<Project[]> {
   const [containers, latest] = await Promise.all([listContainers(ctx), latestImage(ctx)]);
-  const dir = projectsDir(ctx);
-  const names = existsSync(dir)
-    ? readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
-    : [];
+  const names = recordNames(ctx);
 
   const projects: Project[] = names.map((name) => {
     const folder = readFolder(ctx, name);
@@ -52,7 +41,7 @@ export async function loadProjects(ctx: Context): Promise<Project[]> {
     return {
       name,
       folder,
-      managed: folder === join(recordDir(ctx, name), "workspace"),
+      managed: folder === ownWorkspaceDir(ctx, name),
       container,
       legacy,
       outdated: Boolean(container && latest && container.image !== latest.id),
@@ -78,43 +67,4 @@ export async function loadProjects(ctx: Context): Promise<Project[]> {
   return projects.sort((a, b) => lastUsed(b) - lastUsed(a) || a.name.localeCompare(b.name));
 }
 
-/** orca-migrate.sh writes migrated-from once the home it copied checks out; a failed run doesn't. */
-export const migrated = (ctx: Context, name: string) => existsSync(join(recordDir(ctx, name), "migrated-from"));
 
-export async function listContainers(ctx: Context): Promise<Container[]> {
-  const ids = await docker(ctx, ["ps", "-a", "-q"]);
-  const list = ids.split("\n").filter(Boolean);
-  if (list.length === 0) return [];
-  return (JSON.parse(await docker(ctx, ["inspect", ...list])) as Parameters<typeof parseContainer>[0][]).map(parseContainer);
-}
-
-/** `generation`: which orca made it (compat.ts) */
-export type Image = { id: string; created: string; generation: number };
-
-/** The current image, which new containers are made from (orca image use changes it) */
-export const CURRENT_IMAGE = "orca:latest";
-/** The one the last change of the current image replaced */
-export const PREVIOUS_IMAGE = "orca:previous";
-
-export async function latestImage(ctx: Context): Promise<Image | null> {
-  return inspectImage(ctx, CURRENT_IMAGE);
-}
-
-export async function inspectImage(ctx: Context, ref: string): Promise<Image | null> {
-  const r = await ctx.docker.run(["image", "inspect", ref]);
-  if (r.code !== 0) return null;
-  const [img] = JSON.parse(r.stdout) as { Id: string; Created: string; Config?: { Labels?: Record<string, string> | null } }[];
-  const labels = img.Config?.Labels ?? {};
-  return { id: img.Id, created: img.Created, generation: labelGeneration(labels) };
-}
-
-/** Runs a docker command that must succeed, turning the common failures into fixes. */
-export async function docker(ctx: Context, args: string[]): Promise<string> {
-  const r = await ctx.docker.run(args);
-  if (r.code === 0) return r.stdout;
-  if (r.code === 127) throw new OrcaError("Docker isn't installed.", "Install Docker Desktop: https://docs.docker.com/desktop/");
-  if (/Cannot connect to the Docker daemon|Is the docker daemon running/i.test(r.stderr))
-    throw new OrcaError("Docker isn't running.", "Start Docker Desktop, then try again.");
-  // Docker says why on stderr, or for some failures (an exec it couldn't start) on stdout
-  throw new OrcaError(`docker ${args[0]} failed: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`}`);
-}

@@ -1,5 +1,8 @@
 // Every call to the container runtime goes through here, as `docker` commands with flags
-// Podman also accepts, so the runtime stays swappable and tests can use a fake.
+// Podman also accepts, so the runtime stays swappable and tests can use a fake. Commands use
+// docker() for what must succeed and probe() for questions; nothing calls ctx.docker.run itself.
+import type { Context } from "./context";
+import { OrcaError } from "./errors";
 
 export type Result = { code: number; stdout: string; stderr: string };
 
@@ -10,26 +13,11 @@ export interface Docker {
   attach(args: string[]): Promise<number>;
 }
 
-/** What `docker inspect` says about a container, reduced to what Orca uses. */
-export type Container = {
-  name: string;
-  running: boolean;
-  startedAt: number; // ms since epoch, 0 if never started
-  image: string; // image id
-  labels: Record<string, string>;
-  workspace: string | null; // host folder mounted at /workspace
-  home: string | null; // host folder mounted at /home/node
-  networks: string[];
-  /** Its resources: memory in bytes and CPUs, 0 for no limit */
-  memory: number;
-  cpus: number;
-};
-
 export const realDocker: Docker = {
   async run(args) {
     try {
-      // Detached from the terminal (its own session): orca serve runs these every few seconds,
-      // and a terminal titles its window after the program in front, so it flashed "docker"
+      // Detached from the terminal (its own session), so the terminal's title stays orca's: a
+      // terminal titles its window after the program in front, and orca serve runs these often
       const proc = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe", detached: true });
       const [stdout, stderr, code] = await Promise.all([
         new Response(proc.stdout).text(),
@@ -44,38 +32,33 @@ export const realDocker: Docker = {
   async attach(args) {
     const proc = Bun.spawn(["docker", ...args], { stdio: ["inherit", "inherit", "inherit"] });
     const code = await proc.exited;
-    // A tmux killed with its container can't undo what it turned on, so the Mac's terminal kept
-    // reporting the mouse into the shell as text: turn off mouse reporting and focus events,
-    // and show the cursor (all harmless when tmux already did)
+    // Resets the terminal modes tmux turns on (mouse reporting, focus events, a hidden cursor),
+    // which a tmux ended with its container can't turn off itself; harmless when it did
     if (process.stdout.isTTY) process.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?25h");
     return code;
   },
 };
 
-type Inspected = {
-  Name: string;
-  State: { Running: boolean; StartedAt: string };
-  Image: string;
-  Config: { Labels: Record<string, string> | null };
-  Mounts: { Source: string; Destination: string }[];
-  NetworkSettings?: { Networks?: Record<string, unknown> | null };
-  HostConfig?: { Memory?: number; NanoCpus?: number };
-};
-
-export function parseContainer(c: Inspected): Container {
-  // Docker Desktop sometimes reports Mac folders from inside its VM, as /host_mnt/Users/…
-  const mount = (dest: string) => c.Mounts.find((m) => m.Destination === dest)?.Source.replace(/^\/host_mnt(?=\/)/, "") ?? null;
-  const started = Date.parse(c.State.StartedAt);
-  return {
-    name: c.Name.replace(/^\//, ""),
-    running: c.State.Running,
-    startedAt: Number.isNaN(started) || started < 0 ? 0 : started,
-    image: c.Image,
-    labels: c.Config.Labels ?? {},
-    workspace: mount("/workspace"),
-    home: mount("/home/node"),
-    networks: Object.keys(c.NetworkSettings?.Networks ?? {}),
-    memory: c.HostConfig?.Memory ?? 0,
-    cpus: (c.HostConfig?.NanoCpus ?? 0) / 1e9,
-  };
+/**
+ * Runs a docker command that must succeed, returning its output. A failure always carries what
+ * Docker said; when Docker itself doesn't answer, it says that instead.
+ */
+export async function docker(ctx: Context, args: string[]): Promise<string> {
+  const r = await ctx.docker.run(args);
+  if (r.code === 0) return r.stdout;
+  if (r.code === 127) throw new OrcaError("Docker isn't installed.", "Install Docker Desktop: https://docs.docker.com/desktop/");
+  if (!(await answers(ctx))) throw new OrcaError("Docker isn't running.", `Start Docker Desktop, then try again. (Docker said: ${dockerSaid(r).split("\n")[0]})`);
+  throw new OrcaError(`docker ${args[0]} failed: ${dockerSaid(r)}`);
 }
+
+/** What Docker said about a failure: on stderr, or for some (an exec it couldn't start) on stdout. */
+export const dockerSaid = (r: Result) => r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`;
+
+/** Runs a docker command whose result is the answer to a question (is it there?); never throws. */
+export const probe = (ctx: Context, args: string[]): Promise<Result> => ctx.docker.run(args);
+
+/** Runs docker attached to this terminal (an interactive shell), returning its exit code. */
+export const attach = (ctx: Context, args: string[]): Promise<number> => ctx.docker.attach(args);
+
+/** Whether the Docker engine answers at all. */
+const answers = async (ctx: Context) => (await ctx.docker.run(["info", "--format", "{{.ServerVersion}}"])).code === 0;

@@ -1,9 +1,15 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { OrcaError, type Context } from "../context";
+import { OrcaError } from "../errors";
+import { type Context } from "../context";
 import { ensureImage } from "../images";
-import { docker, homeDir, listContainers } from "../projects";
-import { projectAt } from "../proxy";
+import { attach, docker } from "../docker";
+import { fallbackName } from "../names";
+import { homeDir } from "../state";
+import { listContainers } from "../containers";
+import { hasHome, projectAt } from "../records";
+import { mounts, WORKSPACE } from "../container-spec";
+import { shellArgs } from "../in-container";
 
 /** The kinds of plain container orca fallback runs */
 export const KINDS = {
@@ -18,7 +24,8 @@ export function fallbackArgs(f: { kind: Kind; folder: string; home: string | nul
   // A kept container's main process is always a shell, so going back in opens it as it was left
   if (f.kind === "no-folders") return ["run", "-it", "--name", f.name, f.image, "bash"];
   const command = f.command?.length ? f.command : ["bash"];
-  return ["run", "-it", "--rm", "-v", `${f.folder}:/workspace`, ...(f.kind === "home" ? ["-v", `${f.home}:/home/node`] : []), f.image, ...command];
+  const mounted = mounts({ folder: f.folder, home: f.home ?? "" }).filter((m) => m.target === WORKSPACE || f.kind === "home");
+  return ["run", "-it", "--rm", ...mounted.flatMap((m) => ["-v", `${m.source}:${m.target}`]), f.image, ...command];
 }
 
 /**
@@ -30,28 +37,28 @@ export async function fallback(ctx: Context, path: string, opts: { kind?: string
   const folder = resolve(path);
   const project = projectAt(ctx, folder);
   const home = project ? homeDir(ctx, project) : null;
-  const hasHome = home !== null && existsSync(home) && readdirSync(home).length > 0;
+  const withHome = project !== null && hasHome(ctx, project);
 
   let kind = opts.kind as Kind | undefined;
   if (kind !== undefined && !(kind in KINDS)) throw new OrcaError(`There's no fallback "${kind}".`, `Choose one of: ${Object.keys(KINDS).join(", ")}`);
   if (!kind) {
     if (!ctx.choose) throw new OrcaError("Choosing a fallback needs a terminal.", `Name it: orca fallback --kind ${Object.keys(KINDS).join("|")}`);
-    const options = (Object.keys(KINDS) as Kind[]).filter((k) => k !== "home" || hasHome).map((k) => ({ label: KINDS[k], value: k }));
+    const options = (Object.keys(KINDS) as Kind[]).filter((k) => k !== "home" || withHome).map((k) => ({ label: KINDS[k], value: k }));
     const answer = await ctx.choose("Which plain container?", options);
     if (answer === null) return 0;
     kind = answer as Kind;
   }
-  if (kind === "home" && !hasHome) throw new OrcaError(`${folder} has no orca home to use.`, "Use a fresh one: orca fallback --kind fresh-home");
+  if (kind === "home" && !withHome) throw new OrcaError(`${folder} has no orca home to use.`, "Use a fresh one: orca fallback --kind fresh-home");
   if (kind !== "no-folders" && !(existsSync(folder) && statSync(folder).isDirectory())) throw new OrcaError(`${folder} isn't a folder.`);
 
   const { ref } = await ensureImage(ctx, opts.image ?? "current");
   // Kept when it exits, since the work is in it until pushed
-  const name = `orca-fallback-${project ?? basename(folder).replace(/[^a-zA-Z0-9_.-]/g, "-")}`;
+  const name = fallbackName(project ?? basename(folder));
   if (kind === "no-folders" && (await listContainers(ctx)).some((c) => c.name === name)) {
     ctx.print(`Back into ${name}, as you left it. docker rm ${name} removes it once your work is pushed.`);
-    if (!opts.command?.length) return ctx.docker.attach(["start", "-ai", name]);
+    if (!opts.command?.length) return attach(ctx, ["start", "-ai", name]);
     await docker(ctx, ["start", name]);
-    return ctx.docker.attach(["exec", "-it", name, ...opts.command]);
+    return attach(ctx, shellArgs(name, opts.command));
   }
   if (kind === "no-folders") ctx.print("In it: gh auth login, then cd ~ && gh repo clone <owner>/<repo>, then claude. Push before you're done; exiting keeps it, and orca fallback goes back in.");
   if (kind === "fresh-home") ctx.print("A fresh home: log in to Claude and gh inside. It's thrown away when you exit; your folder isn't.");
@@ -60,9 +67,9 @@ export async function fallback(ctx: Context, path: string, opts: { kind?: string
   if (kind === "no-folders" && opts.command?.length) {
     // Its shell keeps it going in the background; the command runs beside it
     await docker(ctx, ["run", "-d", ...args.slice(1)]);
-    return ctx.docker.attach(["exec", "-it", name, ...opts.command]);
+    return attach(ctx, shellArgs(name, opts.command));
   }
-  return ctx.docker.attach(args);
+  return attach(ctx, args);
 }
 
 const quote = (a: string) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);

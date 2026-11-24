@@ -1,20 +1,16 @@
 import { chmodSync, copyFileSync, renameSync, writeFileSync } from "node:fs";
-import { OrcaError, type Context } from "../context";
-import { makeCurrent } from "../images";
-import { docker, inspectImage } from "../projects";
-import { RELEASES, REMOTE_IMAGE, REPO } from "../release";
+import { OrcaError } from "../errors";
+import { type Context } from "../context";
+import { inspectImage, makeCurrent, pull } from "../images";
+import { RELEASES, REPO } from "../release";
+import { REMOTE_IMAGE } from "../names";
 
-export { BUILT, RELEASES, REMOTE_IMAGE, REPO, VERSION } from "../release";
 
 export type SelfUpdate = { version: string; built: string; execPath: string; fetch: typeof fetch; platform: string; arch: string };
 
 export async function update(ctx: Context, opts: { self: SelfUpdate | false }): Promise<void> {
   ctx.print(`Image: checking ${REMOTE_IMAGE}…`);
-  // In the terminal, so Docker shows its download progress
-  if ((await ctx.docker.attach(["pull", REMOTE_IMAGE])) !== 0) {
-    await docker(ctx, ["version"]); // turns "Docker isn't running" into its own message
-    throw new OrcaError(`Couldn't download ${REMOTE_IMAGE} (Docker's message is above).`, "If the image is private: gh auth token | docker login ghcr.io -u <github-user> --password-stdin");
-  }
+  await pull(ctx, REMOTE_IMAGE, "If the image is private: gh auth token | docker login ghcr.io -u <github-user> --password-stdin");
   const pulled = await inspectImage(ctx, REMOTE_IMAGE);
   if (!pulled || !(await makeCurrent(ctx, pulled))) ctx.print("Image: up to date.");
   else {

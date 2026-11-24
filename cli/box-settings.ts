@@ -2,11 +2,12 @@
 // of its container's reach), else the defaults (boxSettings in config.json), else orca's.
 // Docker changes them on an existing container, running or not, so a change never recreates it.
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { readConfig, writeConfig } from "./config";
-import { OrcaError, tilde, type Context } from "./context";
-import type { Container } from "./docker";
-import { docker, recordDir } from "./projects";
+import { OrcaError } from "./errors";
+import { tilde, type Context } from "./context";
+import { docker, probe } from "./docker";
+import { type Container } from "./containers";
+import { boxSettingsFile, configFile } from "./state";
 
 /** Box settings as stored, each one set or not: memory as written (e.g. "12g"), CPUs (fractions allowed) */
 export type BoxSettings = { memory?: string; cpus?: number };
@@ -44,7 +45,7 @@ export function formatMemory(bytes: number): string {
 
 export const describeResources = (r: Resources) => `${formatMemory(r.memory)} of memory, ${r.cpus} CPU${r.cpus === 1 ? "" : "s"}`;
 
-const projectFile = (ctx: Context, project: string) => join(recordDir(ctx, project), "box-settings.json");
+const projectFile = boxSettingsFile;
 
 /** Checks stored settings, saying which file is wrong */
 function checked(raw: BoxSettings, where: string): BoxSettings {
@@ -70,7 +71,7 @@ export function writeBoxSettings(ctx: Context, project: string, s: BoxSettings) 
 }
 
 export function readDefaultSettings(ctx: Context): BoxSettings {
-  return checked(readConfig(ctx).boxSettings ?? {}, `boxSettings in ${tilde(ctx, join(ctx.orcaDir, "config.json"))}`);
+  return checked(readConfig(ctx).boxSettings ?? {}, `boxSettings in ${tilde(ctx, configFile(ctx))}`);
 }
 
 export function writeDefaultSettings(ctx: Context, s: BoxSettings) {
@@ -105,13 +106,13 @@ export async function applySettings(ctx: Context, container: Container, r: Resou
 
 /** What Docker has in all (Docker Desktop's VM), shared by every container */
 export async function dockerTotal(ctx: Context): Promise<Resources | null> {
-  const r = await ctx.docker.run(["info", "--format", "{{.MemTotal}} {{.NCPU}}"]);
+  const r = await probe(ctx, ["info", "--format", "{{.MemTotal}} {{.NCPU}}"]);
   const [memory, cpus] = r.stdout.trim().split(" ").map(Number);
   return r.code === 0 && memory > 0 && cpus > 0 ? { memory, cpus } : null;
 }
 
 /** How much memory a running container uses right now, as Docker reports it (e.g. "2.1GiB") */
 export async function memoryUsed(ctx: Context, container: string): Promise<string | null> {
-  const r = await ctx.docker.run(["stats", "--no-stream", "--format", "{{.MemUsage}}", container]);
+  const r = await probe(ctx, ["stats", "--no-stream", "--format", "{{.MemUsage}}", container]);
   return r.code === 0 ? r.stdout.split("/")[0].trim() || null : null;
 }

@@ -1,5 +1,6 @@
 import { existsSync, renameSync } from "node:fs";
-import { OrcaError, type Context } from "../context";
+import { OrcaError } from "../errors";
+import { type Context } from "../context";
 import { REPO } from "../release";
 import { installBuild, type SelfUpdate } from "./update";
 

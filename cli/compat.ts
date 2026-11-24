@@ -1,5 +1,7 @@
-import { OrcaError, type Context } from "./context";
-import type { Container } from "./docker";
+import { OrcaError } from "./errors";
+import { type Context } from "./context";
+import { LABELS } from "./names";
+import { type Container } from "./containers";
 
 /**
  * Containers made by older orca versions, by generation: the one place orca tells them apart,
@@ -10,7 +12,7 @@ import type { Container } from "./docker";
  * This list is the deprecations' source: what orca says about them comes from it.
  * To deprecate one: set its status to { deprecated: "yyyy-mm-dd" }; `orca start` then says to
  * recreate such containers before that date. To remove one: set it to "removed", delete its
- * files and the helper below that checks for it (beforeHomes, hasTerminals); the compiler finds
+ * files and the helpers below that check for it (beforeHomes; hasTerminals, imageHasTerminals); the compiler finds
  * every caller.
  * compat.test.ts checks the list is well formed.
  */
@@ -54,9 +56,9 @@ export const OLDER: Older[] = [
 
 /** A generation from labels: the label itself, or, on images before it, what they have. */
 export function labelGeneration(labels: Record<string, string>): number {
-  const g = Number(labels["orca.generation"]);
+  const g = Number(labels[LABELS.generation]);
   if (Number.isInteger(g) && g > 0) return g;
-  if (labels["orca.terminals"] === "1") return TERMINALS;
+  if (labels[LABELS.terminals] === "1") return TERMINALS;
   return HOMES;
 }
 
@@ -65,6 +67,8 @@ export const generation = (c: Container) => (c.home ? labelGeneration(c.labels) 
 
 export const beforeHomes = (c: Container) => generation(c) < HOMES;
 export const hasTerminals = (c: Container) => generation(c) >= TERMINALS;
+/** The same for an image, before a container is made from it */
+export const imageHasTerminals = (image: { generation: number }) => image.generation >= TERMINALS;
 
 /** The older generations a container belongs to, oldest first. */
 export const olderFor = (c: Container) => OLDER.filter((o) => generation(c) < o.below);

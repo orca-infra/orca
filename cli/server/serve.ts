@@ -1,13 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { VERSION } from "../commands/update";
+import { dirname } from "node:path";
+import { VERSION } from "../release";
 import { readConfig } from "../config";
-import { OrcaError, tilde, type Context } from "../context";
+import { OrcaError } from "../errors";
+import { tilde, type Context } from "../context";
 import { orcaPath } from "../terminal";
 import page from "../web/index.html";
 import { createApi } from "./api";
 import { guard, securityHeaders } from "./guard";
+import { configFile, serveTokenFile } from "../state";
 
 /**
  * The dashboard: one per Mac, on 127.0.0.1:<servePort>. A new token each run, written where
@@ -17,8 +19,8 @@ import { guard, securityHeaders } from "./guard";
 export async function serve(ctx: Context, opts: { open: boolean }): Promise<never> {
   const { servePort: port } = readConfig(ctx);
   const token = randomBytes(32).toString("base64url");
-  mkdirSync(ctx.orcaDir, { recursive: true });
-  const tokenFile = join(ctx.orcaDir, "serve-token");
+  const tokenFile = serveTokenFile(ctx);
+  mkdirSync(dirname(tokenFile), { recursive: true });
   writeFileSync(tokenFile, token + "\n", { mode: 0o600 });
   chmodSync(tokenFile, 0o600);
 
@@ -37,7 +39,7 @@ export async function serve(ctx: Context, opts: { open: boolean }): Promise<neve
     });
   } catch (e) {
     if (/EADDRINUSE|in use/i.test(String(e)))
-      throw new OrcaError(`Port ${port} on this Mac is already taken; is orca serve already running?`, `Use that one, or choose another port in ${tilde(ctx, join(ctx.orcaDir, "config.json"))}: {"servePort": ${port + 1}}`);
+      throw new OrcaError(`Port ${port} on this Mac is already taken; is orca serve already running?`, `Use that one, or choose another port in ${tilde(ctx, configFile(ctx))}: {"servePort": ${port + 1}}`);
     throw e;
   }
 

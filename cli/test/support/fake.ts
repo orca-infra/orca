@@ -52,6 +52,8 @@ export type FakeState = {
   failing?: string[];
   /** Mac ports something else is listening on, so publishing them fails */
   taken?: number[];
+  /** Mac ports Docker can't publish although nothing on the Mac shows as listening (say, taken on another address) */
+  unpublishable?: number[];
   /** What Docker has in all (docker info); 16 GB and 10 CPUs unless set */
   total?: { memory: number; cpus: number };
 };
@@ -131,7 +133,7 @@ export function fakeDocker(state: FakeState) {
       if (cmd === "network") return network(rest);
       if ((cmd === "run" && rest[0] === "-d") || cmd === "create") {
         const flag = (f: string) => rest.flatMap((a, i) => (a === f ? [rest[i + 1]] : []));
-        const taken = flag("-p").map((p) => Number(p.split(":")[1])).find((p) => state.taken?.includes(p));
+        const taken = flag("-p").map((p) => Number(p.split(":")[1])).find((p) => state.taken?.includes(p) || state.unpublishable?.includes(p));
         if (taken) return fail(`Bind for 127.0.0.1:${taken} failed: port is already allocated`);
         // Like Docker: the image is the last argument, and the container gets its labels too
         const ref = rest[rest.length - 1];
@@ -176,25 +178,23 @@ export function fakeDocker(state: FakeState) {
           stdout: "OCI runtime exec failed: exec failed: unable to start container process: current working directory is outside of container mount namespace root -- possible container breakout detected: unknown\n",
           stderr: "",
         };
-      // What a terminal needs, as orca checks it (checkReady): the folders it mounts
-      if (cmd === "exec" && rest.some((a) => a.includes("|| echo 'missing"))) {
+      // What orca runs in containers, known by name (in-container.ts); each answers with its name first
+      const ran = cmd === "exec" ? /^echo 'orca-ran ([\w-]+)'/.exec(rest[rest.indexOf("-c") + 1] ?? "")?.[1] : undefined;
+      if (ran) {
         const c = find(rest[0]);
-        return ok(["orca-ran", ...(c?.missing ?? []).map((m) => `missing ${m}`)].join("\n") + "\n");
+        const out = (lines: string[], code = 0, stderr = "") => ({ code, stdout: [`orca-ran ${ran}`, ...lines].map((l) => l + "\n").join(""), stderr });
+        if (ran === "ready") return out((c?.missing ?? []).map((m) => `missing ${m}`));
+        // The mark and the terminals together
+        if (ran === "activity") return out([...(c?.up ? ["up"] : []), ...(c?.terminals ?? [])], c?.terminals?.length ? 0 : 1, c?.terminals?.length ? "" : "no server running");
+        if (ran === "keep-up") {
+          if (!c?.running || c.labels?.["orca.up"] !== "1") return { code: 1, stdout: "", stderr: "touch: cannot touch '/run/orca/up': No such file or directory" };
+          c.up = true;
+          return out([]);
+        }
+        // The proxy's certificate authority, as Caddy makes it
+        if (ran === "proxy-ca") return out(["-----BEGIN CERTIFICATE-----", "fake", "-----END CERTIFICATE-----"]);
+        return out([]);
       }
-      // The mark and the terminals together, as orca asks for them (terminals.ts)
-      if (cmd === "exec" && rest.some((a) => a.includes("list-sessions"))) {
-        const c = find(rest[0]);
-        const lines = ["orca-ran", ...(c?.up ? ["up"] : []), ...(c?.terminals ?? [])];
-        return { code: c?.terminals?.length ? 0 : 1, stdout: lines.map((l) => l + "\n").join(""), stderr: c?.terminals?.length ? "" : "no server running" };
-      }
-      if (cmd === "exec" && rest.includes("touch")) {
-        const c = find(rest[0]);
-        if (!c?.running || c.labels?.["orca.up"] !== "1") return fail("touch: cannot touch '/run/orca/up': No such file or directory");
-        c.up = true;
-        return ok();
-      }
-      // The proxy's certificate authority, as Caddy makes it
-      if (cmd === "exec" && rest.some((a) => a.endsWith("root.crt"))) return ok("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");
       if (cmd === "exec") return ok();
       if (cmd === "tag") {
         const id = resolve(rest[0]);
@@ -251,10 +251,17 @@ export function fakeContext(state: Partial<FakeState> = {}, answers: (string | n
     orcaDir: join(home, ".orca"),
     home,
     print: (line = "") => lines.push(line),
-    ask: answers.length ? async () => answers.shift() ?? "" : null,
+    // A question with no answer scripted fails the test, rather than counting as a yes
+    ask: answers.length
+      ? async (question) => {
+          if (!answers.length) throw new Error(`fake: no answer scripted for "${question}"`);
+          return answers.shift()!;
+        }
+      : null,
     choose: answers.length
       ? async (question, options) => {
           lines.push(question, ...options.map((o) => `  ${o.label}`));
+          if (!answers.length) throw new Error(`fake: no answer scripted for "${question}"`);
           const answer = answers.shift() ?? null;
           return options.some((o) => o.value === answer) ? answer : null;
         }
@@ -266,6 +273,7 @@ export function fakeContext(state: Partial<FakeState> = {}, answers: (string | n
       return key in host ? { code: 0, stdout: host[key] + "\n", stderr: "" } : { code: 1, stdout: "", stderr: "" };
     },
     lookup: async (hostname) => names[hostname] ?? [],
+    portFree: async (port) => !full.taken?.includes(port),
     // What's published: GitHub's container registry (its tags) and orca's releases
     fetch: async (url) => {
       if (url.startsWith("https://ghcr.io/token")) return full.published ? Response.json({ token: "t" }) : new Response("", { status: 503 });

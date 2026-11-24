@@ -5,8 +5,9 @@ import { del } from "../../commands/delete";
 import { forward } from "../../commands/forward";
 import { start } from "../../commands/start";
 import { list } from "../../commands/list";
-import { hostFor, PROXY, PROXY_IMAGE, projectAt } from "../../proxy";
 import { fakeContext } from "../support/fake";
+import { hostFor, PROXY, PROXY_IMAGE } from "../../names";
+import { projectAt } from "../../records";
 
 function project(t: ReturnType<typeof fakeContext>, name = "app") {
   const folder = join(t.home, "dev", name);
@@ -294,4 +295,10 @@ test("a proxy from before extra addresses is made again, with the certificate fo
   await forward(t.ctx, { project: "app", add: 3000 });
   expect(t.calls).toContainEqual(["rm", "-f", PROXY]);
   expect(proxy(t)?.labels?.["orca.ports"]).toBe("");
+});
+
+test("a port Docker can't publish, though nothing shows on it, says what Docker said", async () => {
+  const t = fakeContext({ unpublishable: [7320] });
+  project(t);
+  await expect(forward(t.ctx, { project: "app", add: 3000 })).rejects.toMatchObject({ message: expect.stringContaining("The forwards proxy didn't start: Bind for 127.0.0.1:7320 failed") });
 });

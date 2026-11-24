@@ -5,7 +5,9 @@ import { del } from "../../commands/delete";
 import { list } from "../../commands/list";
 import { create } from "../../commands/new";
 import { stop } from "../../commands/stop";
-import { RELEASES, REMOTE_IMAGE, update } from "../../commands/update";
+import { update } from "../../commands/update";
+import { REMOTE_IMAGE } from "../../names";
+import { RELEASES } from "../../release";
 import { fakeContext } from "../support/fake";
 
 function record(orcaDir: string, name: string, folder: string) {

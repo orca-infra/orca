@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
-import { actions, useAction, useProjects, type ProjectView } from "../lib/api";
+import { actions, type ProjectView, useAction, useInfo, useProjects } from "../lib/api";
 
 export function Projects() {
   const projects = useProjects();
@@ -119,6 +119,7 @@ const NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
 
 function NewProject({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [name, setName] = useState("");
+  const info = useInfo();
   const notify = useNotify();
   const create = useAction(actions.create);
   const invalid = name !== "" && !NAME.test(name);
@@ -143,7 +144,7 @@ function NewProject({ open, onOpenChange }: { open: boolean; onOpenChange: (v: b
           <DialogHeader>
             <DialogTitle>New project</DialogTitle>
             <DialogDescription>
-              Its code lives in <code className="font-mono">~/.orca/projects/{name || "<name>"}/workspace</code>. It opens in a terminal.
+              Its code lives in <code className="font-mono">{info.data?.newProjectFolder.replace("<name>", name || "<name>")}</code>. It opens in a terminal.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-1.5">

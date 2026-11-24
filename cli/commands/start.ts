@@ -19,7 +19,7 @@ import { built, ensureImage } from "../images";
 import { applyCreation, checkWithout, containerArgs, workspaceFile } from "../features";
 import { applySettings, describeResources, effective } from "../box-settings";
 import { allForwards, ensureNetwork, PROXY, syncProxy } from "../proxy";
-import { beforeHomes, canKeepUp, checkSupported, hasTerminals, TERMINALS, UP } from "../compat";
+import { beforeHomes, checkSupported, hasTerminals, TERMINALS } from "../compat";
 import { activity, describe, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
 
 export type StartOptions = {
@@ -134,23 +134,17 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
       question: `Start ${name} with those?`,
     });
     if (old) ctx.print(`Box settings: ${describeResources(resources)} (was ${describeResources(old)})`);
-    if (opts.up && !canKeepUp(existing))
-      throw new OrcaError(
-        `${container} is from an image before orca up, so it can't be kept running without terminals.`,
-        `Recreate it on the newest image: orca update, then orca start --fresh ${tilde(ctx, folder)}`,
-      );
     if (!hasTerminals(existing)) return plainShell(ctx, name, container, existing.running, opts);
     if (!existing.running) {
       ctx.print(`Starting ${name}`);
       await docker(ctx, ["start", container]);
     }
-    const box = { name, container, folder, keepsUp: canKeepUp(existing) };
+    const box = { name, container, folder };
     return opts.up ? up(ctx, box) : openTerminal(ctx, box, opts);
   }
 
   const latest = chosen?.image ?? (await latestImage(ctx));
   if (!latest) throw new OrcaError("The orca image isn't on this Mac yet.", "Run: orca update");
-  if (opts.up && latest.generation < UP) throw new OrcaError("The orca image is from before orca up.", "Run: orca update");
   ctx.print(`Creating ${name}: ${tilde(ctx, folder)}, home in ${tilde(ctx, home)}`);
   if (newHome) await applyCreation(ctx, home, without);
   const create = ["--name", container, "--label", `orca.project=${name}`, ...containerArgs({ name, folder, home, network, resources: effective(ctx, name) }), chosen?.ref ?? CURRENT_IMAGE];
@@ -169,7 +163,7 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   // The container runs in the background while any terminal is open, or until it's stopped
   // if kept up (the image's orca-keepalive)
   await docker(ctx, ["run", "-d", ...create]);
-  const box = { name, container, folder, keepsUp: latest.generation >= UP };
+  const box = { name, container, folder };
   return opts.up ? up(ctx, box) : openTerminal(ctx, box, opts);
 }
 
@@ -193,18 +187,18 @@ async function skippable<T>(ctx: Context, step: () => Promise<T>, say: { failed:
   }
 }
 
-type Started = { name: string; container: string; folder: string; keepsUp: boolean };
+type Started = { name: string; container: string; folder: string };
 
 /** Marks a started container to keep running, terminals or not, until it's stopped. */
 async function up(ctx: Context, { name, container, folder }: Started): Promise<number> {
   if (!(await keepUp(ctx, container)))
-    throw new OrcaError(`${container} has nowhere to mark it kept up: an older orca made it.`, `Recreate it: orca stop ${name}, then orca start --fresh ${tilde(ctx, folder)}`);
+    throw new OrcaError(`${container} couldn't be marked to keep running.`, `Recreate it (keeps the folder and the home): orca stop ${name}, then orca start --fresh ${tilde(ctx, folder)}`);
   ctx.print(`${name} is up: it keeps running, with or without terminals, until orca stop ${name}.`);
   return 0;
 }
 
 /** Attaches this window to a terminal: the one asked for, a new one, or one the user picks. */
-async function openTerminal(ctx: Context, { name, container, folder, keepsUp }: Started, opts: StartOptions): Promise<number> {
+async function openTerminal(ctx: Context, { name, container, folder }: Started, opts: StartOptions): Promise<number> {
   const { terminals: open, broken } = await activity(ctx, container);
   if (broken === "lost-folders") throw lostFoldersError(container);
   if (broken) throw new OrcaError(`Docker can't run anything in ${container}.`, `Stop it and start it again: orca stop ${name}, then orca start ${tilde(ctx, folder)}`);
@@ -223,12 +217,10 @@ async function openTerminal(ctx: Context, { name, container, folder, keepsUp }: 
   const code = await ctx.docker.attach(terminalArgs(container, terminal, opts.command));
   // Stopped here, where the last terminal ended, and said so, rather than unseen (a terminal
   // that ends with no window on it is the keepalive's to notice)
-  if (keepsUp) {
-    const now = await activity(ctx, container);
-    if (!now.up && now.terminals.length === 0) {
-      ctx.print(`That was ${name}'s last terminal, so it's stopping. To keep it running without terminals: orca up ${tilde(ctx, folder)}`);
-      await ctx.docker.run(["stop", container]);
-    }
+  const now = await activity(ctx, container);
+  if (!now.up && now.terminals.length === 0) {
+    ctx.print(`That was ${name}'s last terminal, so it's stopping. To keep it running without terminals: orca up ${tilde(ctx, folder)}`);
+    await ctx.docker.run(["stop", container]);
   }
   return code;
 }

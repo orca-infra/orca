@@ -11,7 +11,7 @@ import { dockerTotal, effective, memoryUsed, readBoxSettings, type BoxSettings, 
 import { allForwards, caFile, parseAddress, pointsHere, proxyState, trustCommand, urlFor } from "../proxy";
 import { listSessions, type Session } from "../sessions";
 import { openInTerminal } from "../terminal";
-import { canKeepUp, hasTerminals } from "../compat";
+import { hasTerminals } from "../compat";
 import { activities, activity, listTerminals, type Activity, type Terminal } from "../terminals";
 
 /** What the dashboard shows for a project. */
@@ -27,8 +27,6 @@ export type ProjectView = {
   terminalCount: number;
   /** Started with orca up: it runs until stopped, terminals or not */
   keptUp: boolean;
-  /** Its container can be kept up (it's from an image with orca up) */
-  canKeepUp: boolean;
   lastUsed: number;
 };
 export type ProjectDetail = ProjectView & {
@@ -163,8 +161,6 @@ export function createApi(ctx: Context, opts: { orca: string; version: string })
         .map((f) => ({ port: f.port, url: urlFor(ctx, f.port, p.name), urls: f.urls.map((url) => ({ url, pointsHere: points.get(parseAddress(url).host) ?? true })) })),
       terminalCount: live?.terminals.length ?? 0,
       keptUp: live?.up ?? false,
-      // A project without a container yet gets the newest image's
-      canKeepUp: p.container ? canKeepUp(p.container) : true,
       lastUsed: Math.max(p.container?.startedAt ?? 0, p.legacy?.startedAt ?? 0),
     };
   }

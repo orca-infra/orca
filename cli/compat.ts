@@ -7,20 +7,19 @@ import type { Container } from "./docker";
  * deprecations). Images carry their generation (`orca.generation`); older ones are known by what
  * they lack. Every check for an older container goes through generation(), never a label.
  *
- * To deprecate one: set its status to { deprecated: "yyyy-mm-dd" } and add an **Action needed**
- * entry to CHANGELOG.md. `orca start` then says to recreate such containers before that date.
- * To remove one: set it to "removed", delete the code its entry lists, and the helper below
- * that checks for it; the compiler finds what's left.
+ * This list is the deprecations' source: what orca says about them comes from it.
+ * To deprecate one: set its status to { deprecated: "yyyy-mm-dd" }; `orca start` then says to
+ * recreate such containers before that date. To remove one: set it to "removed", delete the code
+ * its entry lists, and the helper below that checks for it; the compiler finds what's left.
+ * compat.test.ts checks the list is well formed.
  */
 
 /** Containers with their home on the Mac (~/.orca/projects/<project>/home) */
 export const HOMES = 1;
-/** Images whose terminals are tmux sessions that outlive their window */
+/** Images whose terminals are tmux sessions that outlive their window, and that orca up can keep running */
 export const TERMINALS = 2;
-/** Images that can be kept running without terminals (orca up) */
-export const UP = 3;
 /** What orca makes now; the Dockerfile's orca.generation label */
-export const CURRENT = UP;
+export const CURRENT = TERMINALS;
 
 export type Status = "supported" | { deprecated: string } | "removed";
 
@@ -50,20 +49,12 @@ export const OLDER: Older[] = [
     code: "hasTerminals() and its callers (plainShell and the no-terminals image path in start; stop, terminals, the dashboard)",
     status: "supported",
   },
-  {
-    below: UP,
-    id: "before-up",
-    what: "containers from images before orca up: they can't be kept running without terminals, and stop a minute after their last one",
-    code: "canKeepUp() and its callers (start, the dashboard)",
-    status: "supported",
-  },
 ];
 
 /** A generation from labels: the label itself, or, on images before it, what they have. */
 export function labelGeneration(labels: Record<string, string>): number {
   const g = Number(labels["orca.generation"]);
   if (Number.isInteger(g) && g > 0) return g;
-  if (labels["orca.up"] === "1") return UP;
   if (labels["orca.terminals"] === "1") return TERMINALS;
   return HOMES;
 }
@@ -73,7 +64,6 @@ export const generation = (c: Container) => (c.home ? labelGeneration(c.labels) 
 
 export const beforeHomes = (c: Container) => generation(c) < HOMES;
 export const hasTerminals = (c: Container) => generation(c) >= TERMINALS;
-export const canKeepUp = (c: Container) => generation(c) >= UP;
 
 /** The older generations a container belongs to, oldest first. */
 export const olderFor = (c: Container) => OLDER.filter((o) => generation(c) < o.below);

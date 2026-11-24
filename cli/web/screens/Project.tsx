@@ -110,14 +110,14 @@ function Terminals({ p }: { p: ProjectDetail }) {
   const terminals = p.terminals ?? [];
   const stopNow = () => stop.mutate(p.name, { onSuccess: (r) => (notify.done(r), setConfirming(false)), onError: notify.failed });
   // What decides when it stops, so it never stops (or keeps running) unexpectedly
-  const rule = !running || p.terminals === null ? null : p.keptUp ? "Kept up: it runs until you stop it, with or without terminals." : p.canKeepUp ? "It stops when its last terminal ends." : "It stops a minute after its last terminal ends.";
+  const rule = !running || p.terminals === null ? null : p.keptUp ? "Kept up: it runs until you stop it, with or without terminals." : "It stops when its last terminal ends.";
 
   return (
     <Section
       title="Terminals"
       aside={
         <div className="flex gap-2">
-          {p.canKeepUp && p.terminals !== null && !p.keptUp && (
+          {p.terminals !== null && !p.keptUp && (
             <Button size="sm" variant="outline" disabled={up.isPending} onClick={() => up.mutate(p.name, { onSuccess: notify.done, onError: notify.failed })}>
               {running ? "Keep running" : "Start without a terminal"}
             </Button>

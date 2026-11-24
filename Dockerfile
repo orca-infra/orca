@@ -135,8 +135,8 @@ COPY image/tmux.conf /etc/tmux.conf
 RUN echo '. /etc/profile.d/bash_completion.sh' >> /etc/bash.bashrc
 COPY --chmod=755 image/keepalive.sh /usr/local/bin/orca-keepalive
 # Which orca generation this image is (cli/compat.ts), for telling it apart from older ones.
-# Images before orca.generation are known by the other two: terminals, and orca up
-LABEL orca.terminals="1" orca.up="1" orca.generation="3"
+# orca.terminals and orca.up are what older orca commands read; this one reads orca.generation
+LABEL orca.terminals="1" orca.up="1" orca.generation="2"
 
 USER $USERNAME
 WORKDIR /workspace

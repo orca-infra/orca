@@ -35,9 +35,8 @@ export type FakeState = {
   /** id of orca:latest, or null if the image isn't there */
   latest: string | null;
   created: Record<string, string>;
-  /** Images made before terminals (no orca.terminals label), or before orca up (no orca.up) */
+  /** Images made before terminals (no orca.terminals label) */
   noTerminals?: string[];
-  noUp?: string[];
   /** Image names besides orca:latest on this Mac, and the ids they point at (e.g. orca:previous) */
   tags?: Record<string, string>;
   /** Published images by their dated tag (yyyy-mm-dd-commit), and their ids; `docker pull` brings one here */
@@ -65,7 +64,7 @@ export function fakeDocker(state: FakeState) {
   // An image name, as Docker finds it on this Mac: orca:latest, an id, or another tag
   const resolve = (ref: string) => (ref === "orca:latest" ? state.latest : ref.startsWith("sha256:") ? ref : state.tags?.[ref]);
   const imageLabels = (id: string): Record<string, string> =>
-    state.noTerminals?.includes(id) ? {} : state.noUp?.includes(id) ? { "orca.terminals": "1" } : { "orca.terminals": "1", "orca.up": "1" };
+    state.noTerminals?.includes(id) ? {} : { "orca.terminals": "1", "orca.up": "1", "orca.generation": "2" };
 
   function network([sub, ...a]: string[]): Result {
     const net = (n: string) => state.networks.find((x) => x.name === n);

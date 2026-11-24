@@ -1,5 +1,6 @@
 import { readConfig } from "./config";
-import { OrcaError, type Context } from "./context";
+import { OrcaError } from "./errors";
+import { type Context } from "./context";
 
 /** Quotes an argument for a POSIX shell, unless it's plainly safe. */
 export function shellQuote(arg: string): string {

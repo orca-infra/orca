@@ -1,5 +1,7 @@
-import { OrcaError, type Context } from "./context";
-import { CURRENT_IMAGE, docker, inspectImage, PREVIOUS_IMAGE, type Image } from "./projects";
+import { OrcaError } from "./errors";
+import { type Context } from "./context";
+import { attach, docker } from "./docker";
+import { CURRENT_IMAGE, inspectImage, PREVIOUS_IMAGE, type Image } from "./projects";
 import { REGISTRY_IMAGE, REMOTE_IMAGE } from "./release";
 
 /** A published image's tag: the day it was built and its commit */
@@ -24,7 +26,7 @@ export async function ensureImage(ctx: Context, name: string): Promise<{ ref: st
   let image = ref === REMOTE_IMAGE ? null : await inspectImage(ctx, ref);
   if (!image && ref.startsWith(`${REGISTRY_IMAGE}:`)) {
     // In the terminal, so Docker shows its download progress
-    if ((await ctx.docker.attach(["pull", ref])) !== 0) {
+    if ((await attach(ctx, ["pull", ref])) !== 0) {
       await docker(ctx, ["version"]); // turns "Docker isn't running" into its own message
       throw new OrcaError(`Couldn't download ${ref} (Docker's message is above).`, "See what's published: orca image ls");
     }

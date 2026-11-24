@@ -5,7 +5,8 @@
 // container-features.md lists these together with what the image adds, and is kept in step.
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { OrcaError, projectsDir, type Context } from "./context";
+import { OrcaError } from "./errors";
+import { projectsDir, type Context } from "./context";
 import { resourceArgs, type Resources } from "./box-settings";
 
 /** `network` is null when the project's own couldn't be set up: Docker's default then */

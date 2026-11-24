@@ -1,6 +1,8 @@
-import { OrcaError, tilde, type Context } from "./context";
+import { OrcaError } from "./errors";
+import { tilde, type Context } from "./context";
 import { hasTerminals } from "./compat";
 import type { Container } from "./docker";
+import { probe } from "./docker";
 
 /**
  * A terminal in a project's container: a tmux session, so it keeps running when its window
@@ -32,7 +34,7 @@ const FORMAT = "#{session_name}|#{session_attached}|#{session_activity}|#{pane_c
 /** A running container's activity (no terminals when tmux has no server yet). */
 export async function activity(ctx: Context, container: string): Promise<Activity> {
   // Both in one docker exec, as the dashboard asks every few seconds
-  const r = await ctx.docker.run(["exec", container, "sh", "-c", `echo ${RAN}; test -e ${UP} && echo up; tmux list-sessions -F '${FORMAT}'`]);
+  const r = await probe(ctx, ["exec", container, "sh", "-c", `echo ${RAN}; test -e ${UP} && echo up; tmux list-sessions -F '${FORMAT}'`]);
   const [ran, ...lines] = r.stdout.split("\n").filter(Boolean);
   // Anything else on stdout (Docker's own message, when it couldn't run the command) isn't terminals
   if (ran !== RAN) return { terminals: [], up: false };
@@ -54,7 +56,7 @@ export async function activity(ctx: Context, container: string): Promise<Activit
  */
 export async function checkReady(ctx: Context, name: string, container: string, mounted: { source: string; target: string }[]) {
   const checks = mounted.map((m) => `[ -d '${m.target}/.' ] && [ -r '${m.target}/.' ] || echo 'missing ${m.target}'`).join("; ");
-  const r = await ctx.docker.run(["exec", container, "sh", "-c", `echo ${RAN}; ${checks}`]);
+  const r = await probe(ctx, ["exec", container, "sh", "-c", `echo ${RAN}; ${checks}`]);
   const [ran, ...lines] = r.stdout.split("\n").filter(Boolean);
   const missing = mounted.filter((m) => lines.includes(`missing ${m.target}`));
   const problem =
@@ -75,7 +77,7 @@ export const listTerminals = async (ctx: Context, container: string) => (await a
 
 /** Marks a running container to keep running until it's stopped; false if it has nowhere to. */
 export async function keepUp(ctx: Context, container: string): Promise<boolean> {
-  return (await ctx.docker.run(["exec", container, "touch", UP])).code === 0;
+  return (await probe(ctx, ["exec", container, "touch", UP])).code === 0;
 }
 
 /** Each running project's activity, by project name. */

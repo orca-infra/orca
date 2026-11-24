@@ -1,5 +1,7 @@
-import { OrcaError, type Context } from "../context";
-import { docker, loadProjects } from "../projects";
+import { OrcaError } from "../errors";
+import { type Context } from "../context";
+import { docker } from "../docker";
+import { loadProjects } from "../projects";
 import { hasTerminals } from "../compat";
 import { describe, listTerminals } from "../terminals";
 

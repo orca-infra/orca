@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { beforeHomes, labelGeneration } from "./compat";
-import { OrcaError, projectsDir, type Context } from "./context";
-import { parseContainer, type Container } from "./docker";
+import { projectsDir, type Context } from "./context";
+import { type Container, docker, parseContainer, probe } from "./docker";
 
 /**
  * A project is a record, ~/.orca/projects/<name>/, holding its home (mounted as ~) and
@@ -101,20 +101,9 @@ export async function latestImage(ctx: Context): Promise<Image | null> {
 }
 
 export async function inspectImage(ctx: Context, ref: string): Promise<Image | null> {
-  const r = await ctx.docker.run(["image", "inspect", ref]);
+  const r = await probe(ctx, ["image", "inspect", ref]);
   if (r.code !== 0) return null;
   const [img] = JSON.parse(r.stdout) as { Id: string; Created: string; Config?: { Labels?: Record<string, string> | null } }[];
   const labels = img.Config?.Labels ?? {};
   return { id: img.Id, created: img.Created, generation: labelGeneration(labels) };
-}
-
-/** Runs a docker command that must succeed, turning the common failures into fixes. */
-export async function docker(ctx: Context, args: string[]): Promise<string> {
-  const r = await ctx.docker.run(args);
-  if (r.code === 0) return r.stdout;
-  if (r.code === 127) throw new OrcaError("Docker isn't installed.", "Install Docker Desktop: https://docs.docker.com/desktop/");
-  if (/Cannot connect to the Docker daemon|Is the docker daemon running/i.test(r.stderr))
-    throw new OrcaError("Docker isn't running.", "Start Docker Desktop, then try again.");
-  // Docker says why on stderr, or for some failures (an exec it couldn't start) on stdout
-  throw new OrcaError(`docker ${args[0]} failed: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`}`);
 }

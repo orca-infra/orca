@@ -2,8 +2,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join, sep } from "node:path";
 import { caddyfile, type Server } from "./caddyfile";
 import { readConfig } from "./config";
-import { OrcaError, projectsDir, tilde, type Context } from "./context";
-import { containerName, docker, listContainers, readFolder, recordDir } from "./projects";
+import { OrcaError } from "./errors";
+import { projectsDir, tilde, type Context } from "./context";
+import { docker, probe } from "./docker";
+import { containerName, listContainers, readFolder, recordDir } from "./projects";
 
 /**
  * Forwards: one Caddy container, orca-proxy, is the only thing published on the Mac
@@ -113,7 +115,7 @@ export function projectAt(ctx: Context, dir: string): string | null {
 /** Makes sure the project's own network exists. */
 export async function ensureNetwork(ctx: Context, project: string): Promise<string> {
   const name = networkName(project);
-  if ((await ctx.docker.run(["network", "inspect", name])).code !== 0)
+  if ((await probe(ctx, ["network", "inspect", name])).code !== 0)
     await docker(ctx, ["network", "create", "--label", `orca.network=${project}`, name]);
   return name;
 }
@@ -128,7 +130,7 @@ async function projectNetworks(ctx: Context): Promise<{ name: string; subnets: s
 /** Copies the authority's certificate out of the proxy, waiting the moment Caddy takes to make it the first time. */
 async function copyCa(ctx: Context) {
   for (let i = 0; i < 20; i++) {
-    const r = await ctx.docker.run(["exec", PROXY, "cat", CA_IN_PROXY]);
+    const r = await probe(ctx, ["exec", PROXY, "cat", CA_IN_PROXY]);
     if (r.code === 0 && r.stdout.includes("BEGIN CERTIFICATE")) {
       const file = caFile(ctx);
       if (!existsSync(file) || readFileSync(file, "utf8") !== r.stdout) writeFileSync(file, r.stdout);
@@ -181,7 +183,13 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
   }
   const reload = proxy?.running ?? false;
   if (!proxy) {
-    const r = await ctx.docker.run([
+    // Published ports must be free on the Mac; checked first, so the error says which and why
+    for (const p of [port, ...ports])
+      if (!(await ctx.portFree(p)))
+        throw p === port
+          ? new OrcaError(`Port ${port} on this Mac is already taken, so the forwards proxy can't start.`, `Choose another in ${tilde(ctx, join(ctx.orcaDir, "config.json"))}: {"proxyPort": ${port + 1}}`)
+          : new OrcaError(`Port ${p} on this Mac is already taken, so the forwards proxy can't serve addresses on it.`, "Stop what's using it, or use a URL with another port.");
+    const r = await probe(ctx, [
       "run", "-d",
       "--name", PROXY,
       "--label", "orca.proxy=true",
@@ -195,13 +203,8 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
       PROXY_IMAGE,
     ]);
     if (r.code !== 0) {
-      await ctx.docker.run(["rm", "-f", PROXY]);
-      if (/address already in use|port is already allocated/i.test(r.stderr)) {
-        const taken = Number(/127\.0\.0\.1:(\d+)/.exec(r.stderr)?.[1] ?? port);
-        if (taken !== port) throw new OrcaError(`Port ${taken} on this Mac is already taken, so the forwards proxy can't serve addresses on it.`, "Stop what's using it, or use a URL with another port.");
-        throw new OrcaError(`Port ${port} on this Mac is already taken, so the forwards proxy can't start.`, `Choose another in ${tilde(ctx, join(ctx.orcaDir, "config.json"))}: {"proxyPort": ${port + 1}}`);
-      }
-      throw new OrcaError(`The forwards proxy didn't start: ${r.stderr.trim()}`);
+      await probe(ctx, ["rm", "-f", PROXY]);
+      throw new OrcaError(`The forwards proxy didn't start: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`}`);
     }
     proxy = { name: PROXY, running: true, startedAt: 0, image: "", labels: {}, workspace: null, home: null, networks: [], memory: 0, cpus: 0 };
   } else if (!proxy.running) {

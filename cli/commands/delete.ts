@@ -1,7 +1,9 @@
 import { existsSync, lstatSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { OrcaError, tilde, type Context } from "../context";
-import { docker, homeDir, listContainers, loadProjects, recordDir } from "../projects";
+import { OrcaError } from "../errors";
+import { tilde, type Context } from "../context";
+import { docker, probe } from "../docker";
+import { homeDir, listContainers, loadProjects, recordDir } from "../projects";
 import { allForwards, networkName, PROXY, syncProxy } from "../proxy";
 
 export type DeleteOptions = { home?: boolean; yes?: boolean };
@@ -61,7 +63,7 @@ export async function del(ctx: Context, name: string, opts: DeleteOptions): Prom
   }
   // The project's network goes with its container; the proxy leaves it first
   const network = networkName(name);
-  if (p.container && (await ctx.docker.run(["network", "inspect", network])).code === 0) {
+  if (p.container && (await probe(ctx, ["network", "inspect", network])).code === 0) {
     const proxy = (await listContainers(ctx)).find((c) => c.name === PROXY);
     if (proxy?.networks.includes(network)) await docker(ctx, ["network", "disconnect", network, PROXY]);
     await docker(ctx, ["network", "rm", network]);

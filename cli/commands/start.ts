@@ -1,18 +1,9 @@
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { OrcaError, projectsDir, tilde, type Context } from "../context";
-import {
-  containerName,
-  docker,
-  CURRENT_IMAGE,
-  homeDir,
-  inspectImage,
-  latestImage,
-  listContainers,
-  migrated,
-  readFolder,
-  recordDir,
-} from "../projects";
+import { OrcaError } from "../errors";
+import { projectsDir, tilde, type Context } from "../context";
+import { attach, docker, probe } from "../docker";
+import { containerName, CURRENT_IMAGE, homeDir, inspectImage, latestImage, listContainers, migrated, readFolder, recordDir } from "../projects";
 import { readConfig } from "../config";
 import { built, ensureImage } from "../images";
 import { applyCreation, checkWithout, containerArgs, mounts, workspaceFile } from "../features";
@@ -152,9 +143,9 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   if (latest.generation < TERMINALS) {
     // An image from before terminals: its main process is the first window's shell
     ctx.print("This image has no terminals yet; for them: orca update, then orca start --fresh");
-    if (!opts.command) return ctx.docker.attach(["run", "-it", ...create, "bash"]);
+    if (!opts.command) return attach(ctx, ["run", "-it", ...create, "bash"]);
     await docker(ctx, ["run", "-d", "-it", ...create, "bash"]);
-    return ctx.docker.attach(["exec", "-it", container, ...opts.command]);
+    return attach(ctx, ["exec", "-it", container, ...opts.command]);
   }
   // The container runs in the background while any terminal is open, or until it's stopped
   // if kept up (the image's orca-keepalive)
@@ -210,13 +201,13 @@ async function openTerminal(ctx: Context, { name, container, folder }: Started, 
   const terminal = pick ?? nextName(open);
   ctx.print(open.some((t) => t.name === terminal) ? `Attaching to ${name} terminal ${terminal}` : `Opening ${name} terminal ${terminal}`);
   ctx.print("  Closing this window leaves it running; exit its shell to end it.");
-  const code = await ctx.docker.attach(terminalArgs(container, terminal, opts.command));
+  const code = await attach(ctx, terminalArgs(container, terminal, opts.command));
   // Stopped here, where the last terminal ended, and said so, rather than unseen (a terminal
   // that ends with no window on it is the keepalive's to notice)
   const now = await activity(ctx, container);
   if (!now.up && now.terminals.length === 0) {
     ctx.print(`That was ${name}'s last terminal, so it's stopping. To keep it running without terminals: orca up ${tilde(ctx, folder)}`);
-    await ctx.docker.run(["stop", container]);
+    await probe(ctx, ["stop", container]);
   }
   return code;
 }
@@ -226,14 +217,14 @@ async function plainShell(ctx: Context, name: string, container: string, running
   ctx.print(`${name}'s container is from before terminals, so its shells end with their window. For terminals: orca start --fresh`);
   if (opts.command) {
     if (!running) await docker(ctx, ["start", container]);
-    return ctx.docker.attach(["exec", "-it", container, ...opts.command]);
+    return attach(ctx, ["exec", "-it", container, ...opts.command]);
   }
   if (running) {
     ctx.print(`${name} is already running: opening another shell in it`);
-    return ctx.docker.attach(["exec", "-it", container, "bash"]);
+    return attach(ctx, ["exec", "-it", container, "bash"]);
   }
   ctx.print(`Resuming ${name}`);
-  return ctx.docker.attach(["start", "-ai", container]);
+  return attach(ctx, ["start", "-ai", container]);
 }
 
 const count = (n: number) => `${n} terminal${n === 1 ? "" : "s"}`;

@@ -1,5 +1,8 @@
 // Every call to the container runtime goes through here, as `docker` commands with flags
-// Podman also accepts, so the runtime stays swappable and tests can use a fake.
+// Podman also accepts, so the runtime stays swappable and tests can use a fake. Commands use
+// docker() for what must succeed and probe() for questions; nothing calls ctx.docker.run itself.
+import type { Context } from "./context";
+import { OrcaError } from "./errors";
 
 export type Result = { code: number; stdout: string; stderr: string };
 
@@ -79,3 +82,25 @@ export function parseContainer(c: Inspected): Container {
     cpus: (c.HostConfig?.NanoCpus ?? 0) / 1e9,
   };
 }
+
+/**
+ * Runs a docker command that must succeed, returning its output. A failure always carries what
+ * Docker said; when Docker itself doesn't answer, it says that instead.
+ */
+export async function docker(ctx: Context, args: string[]): Promise<string> {
+  const r = await ctx.docker.run(args);
+  if (r.code === 0) return r.stdout;
+  if (r.code === 127) throw new OrcaError("Docker isn't installed.", "Install Docker Desktop: https://docs.docker.com/desktop/");
+  if (!(await answers(ctx))) throw new OrcaError("Docker isn't running.", "Start Docker Desktop, then try again.");
+  // Docker says why on stderr, or for some failures (an exec it couldn't start) on stdout
+  throw new OrcaError(`docker ${args[0]} failed: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`}`);
+}
+
+/** Runs a docker command whose result is the answer to a question (is it there?); never throws. */
+export const probe = (ctx: Context, args: string[]): Promise<Result> => ctx.docker.run(args);
+
+/** Runs docker attached to this terminal (an interactive shell), returning its exit code. */
+export const attach = (ctx: Context, args: string[]): Promise<number> => ctx.docker.attach(args);
+
+/** Whether the Docker engine answers at all. */
+const answers = async (ctx: Context) => (await ctx.docker.run(["info", "--format", "{{.ServerVersion}}"])).code === 0;

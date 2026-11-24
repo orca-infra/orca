@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { OrcaError, type Context } from "../context";
+import { OrcaError } from "../errors";
+import { type Context } from "../context";
 import { keptBy } from "../present";
 import { homeDir, loadProjects, type Project } from "../projects";
 import { activities } from "../terminals";

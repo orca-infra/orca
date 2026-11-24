@@ -266,6 +266,7 @@ export function fakeContext(state: Partial<FakeState> = {}, answers: (string | n
       return key in host ? { code: 0, stdout: host[key] + "\n", stderr: "" } : { code: 1, stdout: "", stderr: "" };
     },
     lookup: async (hostname) => names[hostname] ?? [],
+    portFree: async (port) => !full.taken?.includes(port),
     // What's published: GitHub's container registry (its tags) and orca's releases
     fetch: async (url) => {
       if (url.startsWith("https://ghcr.io/token")) return full.published ? Response.json({ token: "t" }) : new Response("", { status: 503 });

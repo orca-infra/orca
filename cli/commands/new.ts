@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { OrcaError, type Context } from "../context";
+import { OrcaError } from "../errors";
+import { type Context } from "../context";
 import { recordDir } from "../projects";
 import { start, type StartOptions } from "./start";
 

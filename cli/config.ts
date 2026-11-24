@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { OrcaError, tilde, type Context } from "./context";
+import { OrcaError } from "./errors";
+import { tilde, type Context } from "./context";
 import { checkWithout } from "./features";
 
 /** Orca's settings, in ~/.orca/config.json. Every key is optional. */

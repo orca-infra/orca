@@ -4,9 +4,11 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readConfig, writeConfig } from "./config";
-import { OrcaError, tilde, type Context } from "./context";
+import { OrcaError } from "./errors";
+import { tilde, type Context } from "./context";
 import type { Container } from "./docker";
-import { docker, recordDir } from "./projects";
+import { docker, probe } from "./docker";
+import { recordDir } from "./projects";
 
 /** Box settings as stored, each one set or not: memory as written (e.g. "12g"), CPUs (fractions allowed) */
 export type BoxSettings = { memory?: string; cpus?: number };
@@ -105,13 +107,13 @@ export async function applySettings(ctx: Context, container: Container, r: Resou
 
 /** What Docker has in all (Docker Desktop's VM), shared by every container */
 export async function dockerTotal(ctx: Context): Promise<Resources | null> {
-  const r = await ctx.docker.run(["info", "--format", "{{.MemTotal}} {{.NCPU}}"]);
+  const r = await probe(ctx, ["info", "--format", "{{.MemTotal}} {{.NCPU}}"]);
   const [memory, cpus] = r.stdout.trim().split(" ").map(Number);
   return r.code === 0 && memory > 0 && cpus > 0 ? { memory, cpus } : null;
 }
 
 /** How much memory a running container uses right now, as Docker reports it (e.g. "2.1GiB") */
 export async function memoryUsed(ctx: Context, container: string): Promise<string | null> {
-  const r = await ctx.docker.run(["stats", "--no-stream", "--format", "{{.MemUsage}}", container]);
+  const r = await probe(ctx, ["stats", "--no-stream", "--format", "{{.MemUsage}}", container]);
   return r.code === 0 ? r.stdout.split("/")[0].trim() || null : null;
 }

@@ -1,4 +1,5 @@
-import { OrcaError, type Context } from "./context";
+import { OrcaError } from "./errors";
+import { type Context } from "./context";
 import type { Container } from "./docker";
 
 /**

@@ -1,4 +1,5 @@
-import { OrcaError, tilde, type Context } from "../context";
+import { OrcaError } from "../errors";
+import { tilde, type Context } from "../context";
 import { built, ensureImage, makeCurrent, publishedTags } from "../images";
 import { CURRENT_IMAGE, inspectImage, loadProjects, PREVIOUS_IMAGE, type Image, type Project } from "../projects";
 import { REGISTRY_IMAGE } from "../release";

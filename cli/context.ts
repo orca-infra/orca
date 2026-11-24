@@ -1,3 +1,5 @@
+import { createServer } from "node:net";
+import { OrcaError } from "./errors";
 import { lookup } from "node:dns/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +28,8 @@ export type Context = {
   host: (argv: string[]) => Promise<Result>;
   /** A hostname's addresses, looked up on the Mac as a browser there would; none if it doesn't resolve */
   lookup: (hostname: string) => Promise<string[]>;
+  /** Whether a port on the Mac's 127.0.0.1 is free to publish */
+  portFree: (port: number) => Promise<boolean>;
   /** The web, for what's published on GitHub (images, orca's builds) */
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
 };
@@ -57,6 +61,11 @@ export function realContext(): Context {
       }
     },
     fetch: (url, init) => fetch(url, init),
+    portFree: (port) =>
+      new Promise((resolve) => {
+        const server = createServer().once("error", () => resolve(false));
+        server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
+      }),
     lookup: async (hostname) => {
       const timeout = new Promise<[]>((resolve) => setTimeout(() => resolve([]), 2000));
       const found = lookup(hostname, { all: true }).then((all) => all.map((a) => a.address), () => []);
@@ -67,15 +76,6 @@ export function realContext(): Context {
 
 export const projectsDir = (ctx: Context) => join(ctx.orcaDir, "projects");
 
-/** A failure the user can act on: what happened, and the command that fixes it. */
-export class OrcaError extends Error {
-  constructor(
-    message: string,
-    readonly fix?: string,
-  ) {
-    super(message);
-  }
-}
 
 /** Shows a host path the way the user would type it. */
 export function tilde(ctx: Context, path: string): string {

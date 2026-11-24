@@ -5,7 +5,7 @@ import { ensureImage } from "../images";
 import { homeDir, listContainers } from "../projects";
 import { projectAt } from "../proxy";
 
-/** The kinds of plain container, as FALLBACKS.md describes them */
+/** The kinds of plain container orca fallback runs */
 export const KINDS = {
   home: "Your folder and home: for when orca's own machinery is what's broken",
   "fresh-home": "Your folder, a fresh home: for when something in the home is (log in again inside)",

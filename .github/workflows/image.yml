@@ -127,8 +127,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # :latest moves; the dated tag stays, so a broken image can be gone back from
-      # (FALLBACKS.md, and "image" in ~/.orca/config.json)
+      # :latest moves; the dated tag stays, so any published image can be gone back to
+      # (orca image use <yyyy-mm-dd>-<commit>)
       - name: Tag both platforms as latest, and by date and commit
         working-directory: /tmp/digests
         run: |

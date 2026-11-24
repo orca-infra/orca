@@ -81,14 +81,14 @@ test('"without": ["workspace-file"] in the config leaves it out', async () => {
   expect(existsSync(file(dir))).toBe(false);
 });
 
-test("the user's own file is left alone, saying once which repos it doesn't list and what it lists that's gone", async () => {
+test("the user's own file is left alone, saying once which repos it doesn't list and what it lists that isn't in the folder", async () => {
   const t = fakeContext();
   const dir = project(t.home, ["api", "web"]);
   const own = '// mine\n{ "folders": [{ "path": "." }, { "path": "api" }, { "path": "old" }] }\n';
   writeFileSync(file(dir), own);
   await start(t.ctx, dir, {});
   expect(readFileSync(file(dir), "utf8")).toBe(own);
-  expect(t.output()).toContain("app.code-workspace is yours (no orca mark), so it's left as it is; it doesn't list web, and lists old, which no longer exists.");
+  expect(t.output()).toContain("app.code-workspace is yours (no orca mark), so it's left as it is; it doesn't list web, and lists old, which isn't in the folder.");
 
   let before = t.lines.length;
   await start(t.ctx, dir, {});

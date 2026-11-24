@@ -113,7 +113,7 @@ ${JSON.stringify(workspace, null, 2)}
   ctx.print(`  It ${RULES}.${old === null ? " Open it in VS Code or Cursor." : ""}`);
 }
 
-/** The user's own workspace file: left as it is, saying once (per change) which repos it doesn't list, and which folders it lists that are gone. */
+/** The user's own workspace file: left as it is, saying once (per difference) how it differs from the folder: repos it doesn't list, and folders it lists that aren't in the folder. */
 function noticeUsersFile(ctx: Context, name: string, file: string, text: string, repos: string[]) {
   let listed: string[];
   try {
@@ -124,13 +124,13 @@ function noticeUsersFile(ctx: Context, name: string, file: string, text: string,
     return;
   }
   const missing = repos.filter((r) => !listed.includes(r));
-  const gone = listed.filter((p) => !existsSync(join(file, "..", p)));
+  const notThere = listed.filter((p) => !existsSync(join(file, "..", p)));
   const seen = join(projectsDir(ctx), name, "workspace-file-notice");
-  const now = JSON.stringify({ missing, gone });
-  if (!missing.length && !gone.length) return rmSync(seen, { force: true });
+  const now = JSON.stringify({ missing, notThere });
+  if (!missing.length && !notThere.length) return rmSync(seen, { force: true });
   if (existsSync(seen) && readFileSync(seen, "utf8") === now) return;
   writeFileSync(seen, now);
-  const parts = [missing.length && `doesn't list ${missing.join(", ")}`, gone.length && `lists ${gone.join(", ")}, which no longer exist${gone.length === 1 ? "s" : ""}`].filter(Boolean);
+  const parts = [missing.length && `doesn't list ${missing.join(", ")}`, notThere.length && `lists ${notThere.join(", ")}, which ${notThere.length === 1 ? "isn't" : "aren't"} in the folder`].filter(Boolean);
   ctx.print(`Workspace file: ${name}.code-workspace is yours (no orca mark), so it's left as it is; it ${parts.join(", and ")}.`);
   ctx.print(`  Edit it yourself, or delete it for orca to write one (orca ${RULES}).`);
 }

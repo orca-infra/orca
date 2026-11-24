@@ -50,7 +50,7 @@ export async function installBuild(ctx: Context, s: SelfUpdate, version: string)
   const exists = await s.fetch(`${RELEASES}/download/cli-${version}/${asset}.sha256`).catch(() => null);
   if (!exists?.ok) throw new OrcaError(`There's no published build ${version} for ${asset.slice(5)}.`, "See what's published: orca self ls");
   const expected = (await exists.text()).trim().split(/\s+/)[0];
-  ctx.print(`orca: downloading ${version} (about 70 MB; GitHub can take a minute)…`);
+  ctx.print(`orca: downloading ${version}…`);
   const binary = await download(await get(s, `download/cli-${version}/${asset}`));
   const actual = new Bun.CryptoHasher("sha256").update(binary).digest("hex");
   if (actual !== expected) throw new OrcaError(`The downloaded orca doesn't match its published checksum; not installing it.`);
@@ -67,29 +67,7 @@ export async function installBuild(ctx: Context, s: SelfUpdate, version: string)
   }
   ctx.print(`orca: now ${version} (was ${s.version}). The one it replaces is kept: orca self use previous goes back to it.`);
 
-  // Extra: a missing or unreadable changelog never fails an update that has already happened
-  const changelog = await s.fetch(`${RELEASES}/download/cli-${version}/CHANGELOG.md`).catch(() => null);
-  const news = changelog?.ok ? changesSince(await changelog.text(), s.built) : [];
-  if (news.length) ctx.print(["", "What's new (CHANGELOG.md):", ...news.map((n) => `  ${n}`)].join("\n"));
-}
-
-/**
- * The entries of CHANGELOG.md dated on or after `built`, action needed first, as plain text.
- * Its sections are `## yyyy-mm-dd` with `- ` entries; its own day is included, since a build
- * can't tell whether it came before or after that day's entries. No date: none are shown.
- */
-export function changesSince(changelog: string, built: string): string[] {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(built)) return [];
-  const entries: string[] = [];
-  let date = "";
-  for (const line of changelog.split("\n")) {
-    const heading = line.match(/^## (\d{4}-\d{2}-\d{2})/);
-    if (heading) date = heading[1]!;
-    else if (line.startsWith("- ") && date >= built) entries.push(line.slice(2));
-    else if (/^\s+\S/.test(line) && entries.length && date >= built) entries[entries.length - 1] += " " + line.trim();
-  }
-  const plain = entries.map((e) => e.replace(/\*\*|`/g, ""));
-  return [...plain.filter((e) => e.startsWith("Action needed")), ...plain.filter((e) => !e.startsWith("Action needed"))];
+  ctx.print(`  What's changed: https://github.com/${REPO}/blob/${version}/CHANGELOG.md`);
 }
 
 /** Reads a download, showing how far along it is when there's a terminal to show it in. */

@@ -14,6 +14,7 @@ import { start } from "./commands/start";
 import { stop } from "./commands/stop";
 import { BUILT, update, VERSION } from "./commands/update";
 import { OrcaError, realContext } from "./context";
+import { optionalIds } from "./features";
 import { serve } from "./server/serve";
 import { projectAt } from "./proxy";
 import { drawView, VIEW_COMMAND } from "./ui/show";
@@ -32,9 +33,7 @@ Usage:
                             folder and the home)
       --image <name>        make its container from that image, when this makes one
                             (new, or --fresh): names as for orca image use
-      --without <feature>   leave out a feature: one that copies something from the Mac
-                            when this creates the project (git-identity), or the
-                            workspace-file (container-features.md)
+      --without <feature>   leave out a feature: ${optionalIds.join(", ")}
       -- <command>          run a command in a new terminal instead of a shell,
                             e.g. -- claude --resume
   orca up [folder]          start a folder's container (creating it if need be) without a
@@ -74,7 +73,7 @@ Usage:
   orca self ls              this orca's build, the previous one, and the published ones
   orca self use <build>     switch orca to a published build, latest, or previous
   orca fallback [folder]    work in a plain container, without orca's terminals, proxy or
-                            networks, when orca's usual one doesn't work (FALLBACKS.md)
+                            networks, when orca's usual one doesn't work
       --kind <kind>         ${Object.keys(KINDS).join(", ")} (asks when not given)
       --image <name>        as for orca image use
 

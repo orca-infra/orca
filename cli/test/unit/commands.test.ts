@@ -5,7 +5,7 @@ import { del } from "../../commands/delete";
 import { list } from "../../commands/list";
 import { create } from "../../commands/new";
 import { stop } from "../../commands/stop";
-import { changesSince, RELEASES, REMOTE_IMAGE, update } from "../../commands/update";
+import { RELEASES, REMOTE_IMAGE, update } from "../../commands/update";
 import { fakeContext } from "../support/fake";
 
 function record(orcaDir: string, name: string, folder: string) {
@@ -285,22 +285,7 @@ test("list shows which running projects are kept up", async () => {
   expect(t.output()).toContain('"keptUp": true');
 });
 
-test("update shows what the changelog says since the build it replaced, action needed first", async () => {
-  const t = fakeContext();
-  const s = selfUpdate(t, {
-    "latest/download/version": "bbb",
-    "download/cli-bbb/orca-darwin-arm64": "new binary",
-    "download/cli-bbb/orca-darwin-arm64.sha256": sha("new binary"),
-    "download/cli-bbb/CHANGELOG.md": "# Changelog\n\n## 2026-11-05\n\n- New: `orca thing`.\n- **Action needed:** run\n  `orca fix`.\n\n## 2026-10-01\n\n- Old news.\n",
-  });
-  await update(t.ctx, { self: s.opts });
-  const out = t.output();
-  expect(out.indexOf("Action needed: run orca fix.")).toBeGreaterThan(-1);
-  expect(out.indexOf("Action needed")).toBeLessThan(out.indexOf("New: orca thing."));
-  expect(out).not.toContain("Old news");
-});
-
-test("update without a changelog in the release still updates", async () => {
+test("update links to what's changed in the build it installs", async () => {
   const t = fakeContext();
   const s = selfUpdate(t, {
     "latest/download/version": "bbb",
@@ -308,14 +293,7 @@ test("update without a changelog in the release still updates", async () => {
     "download/cli-bbb/orca-darwin-arm64.sha256": sha("new binary"),
   });
   await update(t.ctx, { self: s.opts });
-  expect(readFileSync(s.execPath, "utf8")).toBe("new binary");
-  expect(t.output()).not.toContain("What's new");
-});
-
-test("changelog entries include the build's own day, and none without a date", () => {
-  const log = "## 2026-11-01\n\n- Same day.\n\n## 2026-10-31\n\n- Before.\n";
-  expect(changesSince(log, "2026-11-01")).toEqual(["Same day."]);
-  expect(changesSince(log, "")).toEqual([]);
+  expect(t.output()).toContain("What's changed: https://github.com/orca-infra/orca/blob/bbb/CHANGELOG.md");
 });
 
 test("stop doesn't list runc's refusal as a terminal when the container lost its folders", async () => {

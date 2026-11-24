@@ -35,7 +35,7 @@ trap 'rm -rf "$tmp"' EXIT
 # The version first, then everything from that one release, so a build CI is publishing
 # right now can't get mixed into this download
 version=${1:-$(curl -fsSL "$RELEASES/latest/download/version")}
-echo "Downloading orca $version for $os-$arch (about 70 MB; GitHub can take a minute)…"
+echo "Downloading orca $version for $os-$arch…"
 curl -fL --progress-bar "$RELEASES/download/cli-$version/$asset" -o "$tmp/orca" \
     || { echo "✗ There's no build cli-$version for $os-$arch. Releases: $RELEASES" >&2; exit 1; }
 curl -fsSL "$RELEASES/download/cli-$version/$asset.sha256" -o "$tmp/orca.sha256"

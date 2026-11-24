@@ -41,7 +41,7 @@ Agents in project containers are treated as untrusted by the tooling on the Mac.
 
 ## Changelog
 
-`CHANGELOG.md` is what people using Orca should know, not the history: anything they have to do after updating (an entry starting **Action needed:**), changes they'd notice, and new things worth knowing about. Add the entry in the PR that makes the change, under that day's `## yyyy-mm-dd`; `orca update` and `install-orca` read it.
+`CHANGELOG.md` is what people using Orca should know, not the history: anything they have to do after updating (an entry starting **Action needed:**), changes they'd notice, and new things worth knowing about. Add the entry in the PR that makes the change, under that day's `## yyyy-mm-dd`; `install-orca` reads it, and `orca update` links to it. Code never reads it: what `orca` must tell people (a deprecation, say) comes from code, like `cli/compat.ts`.
 
 ## Git Rules
 

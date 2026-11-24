@@ -41,7 +41,7 @@ e2e: build        ## Run the end-to-end tests against real Docker (CI): make e2e
 build: dist/orca-$(HOST)   ## Build orca for this machine
 
 dist: $(PLATFORMS:%=dist/orca-%)   ## Build orca for every platform, with checksums
-	cd dist && for f in $(PLATFORMS:%=orca-%); do sha256sum $$f > $$f.sha256; done && echo $(VERSION) > version && cp ../CHANGELOG.md .
+	cd dist && for f in $(PLATFORMS:%=orca-%); do sha256sum $$f > $$f.sha256; done && echo $(VERSION) > version
 
 dist/orca-%: $(shell find cli \( -name '*.ts*' -o -name '*.css' -o -name '*.html' \) -not -path '*/test/*') package.json bun.lock
 	$(BUN) cli/build.ts $* $@ $(VERSION) $(REPO) $(BUILT)

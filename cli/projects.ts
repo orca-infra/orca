@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { beforeHomes, labelGeneration } from "./compat";
-import { readConfig } from "./config";
 import { OrcaError, projectsDir, type Context } from "./context";
 import { lostFolders, parseContainer, type Container } from "./docker";
 
@@ -92,11 +91,13 @@ export async function listContainers(ctx: Context): Promise<Container[]> {
 /** `generation`: which orca made it (compat.ts) */
 export type Image = { id: string; created: string; generation: number };
 
-/** The image new containers are made from: orca:latest, unless config.json pins another */
-export const imageName = (ctx: Context) => readConfig(ctx).image ?? "orca:latest";
+/** The current image, which new containers are made from (orca image use changes it) */
+export const CURRENT_IMAGE = "orca:latest";
+/** The one the last change of the current image replaced */
+export const PREVIOUS_IMAGE = "orca:previous";
 
 export async function latestImage(ctx: Context): Promise<Image | null> {
-  return inspectImage(ctx, imageName(ctx));
+  return inspectImage(ctx, CURRENT_IMAGE);
 }
 
 export async function inspectImage(ctx: Context, ref: string): Promise<Image | null> {

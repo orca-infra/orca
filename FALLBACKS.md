@@ -1,56 +1,51 @@
 # Fallbacks: working in a project when orca doesn't
 
-Each of these is one command in a terminal on the Mac, and needs only Docker and an orca image: no `orca` command, terminals, proxy or networks. Claude runs inside, as usual. Start with the first; go down the list when it doesn't work.
+In order: use the first that applies. Every one keeps your project folder and your home as they are.
 
-## Your folder and home
-
-When `orca` itself, or something it adds, is what's broken. From the project's folder:
+## Orca's usual container doesn't work
 
 ```sh
-docker run -it --rm -v "$PWD:/workspace" -v ~/.orca/projects/<project>/home:/home/node orca:latest bash
+orca fallback
 ```
 
-Your logins, Claude's memory and sessions are there, as in `orca start`.
+Run in the project's folder, it asks which plain container to work in, and runs it with one `docker run`: none of orca's terminals, proxy or networks. Claude runs inside as usual.
 
-## Your folder, a fresh home
+- **Your folder and home**: when orca's own machinery is what's broken. Your logins, Claude's memory and sessions are there.
+- **Your folder, a fresh home**: when something in the home is what's broken (say, a Claude update or a dotfile that stops every shell). Log in again inside; this home is thrown away when you exit.
+- **No folders from the Mac**: when the container can't see the Mac's folders at all (Docker Desktop's file sharing has stopped: logins seem gone, `~` doesn't exist). Work from a clone (`gh auth login`, then `gh repo clone`), and push before you're done. Exiting keeps the container; `orca fallback` goes back into it.
 
-When something in the home is what's broken (say, a Claude update or a dotfile that stops every shell): the same, without the home.
+Add `--image <name>` for another image (below). It prints the `docker` command it runs, to paste if even `orca fallback` stops working.
+
+## The image is what's broken
 
 ```sh
-docker run -it --rm -v "$PWD:/workspace" orca:latest bash
+orca image ls              # the current image, the previous one, the published ones
+orca image use previous    # or a published <yyyy-mm-dd>-<commit>, or latest
 ```
 
-Log in to Claude and gh again inside. The home is thrown away when you exit; your project's files are on the Mac as always.
+`orca image use` makes that image the one new containers are made from, keeps the one it replaces (so `orca image use previous` goes back), and offers to remake the stopped projects' containers on it. For one project only: `orca start --fresh --image previous`.
 
-## No folders from the Mac
-
-When the container can't see the Mac's folders at all (Docker Desktop's file sharing has stopped working: logins seem gone, `~` doesn't exist). Work from a clone, and push before you're done:
+## orca itself is what's broken
 
 ```sh
-docker run -it --name orca-fallback orca:latest bash
-# inside:
-gh auth login
-cd ~ && gh repo clone <owner>/<repo> && cd <repo>
-claude
+orca self ls               # this build, the previous one, the published ones
+orca self use previous     # or a published build, or latest
 ```
 
-Exiting keeps the container; `docker start -ai orca-fallback` goes back in, and `docker rm orca-fallback` removes it once your work is pushed.
+If the new `orca` won't run at all, the one it replaced still does: `"$(which orca).previous" self use previous` swaps them back.
 
-## An older image
+## No orca runs at all
 
-When the image is what's broken: any command above with another image in place of `orca:latest`:
-
-- `orca:previous`: the one the last `orca update` replaced
-- a published one, by date and commit: `ghcr.io/orca-infra/orca:<yyyy-mm-dd>-<commit>`, listed at https://github.com/orca-infra/orca/pkgs/container/orca (`docker pull` it first)
-
-For `orca` itself to make containers from it, put it in `~/.orca/config.json`, e.g. `{"image": "orca:previous"}`, then recreate the project's container: `orca stop <project>`, then `orca start --fresh`. Remove `image` to go back to `orca:latest`.
-
-## An older `orca`
-
-When `orca` itself is what's broken: the one the last `orca update` replaced is beside it, as `orca.previous` (`which orca` shows where): `mv "$(which orca).previous" "$(which orca)"`. Or install any published build by its commit (from https://github.com/orca-infra/orca/releases, `cli-<commit>`):
+Install a published build (`cli-<commit>` at https://github.com/orca-infra/orca/releases), or the newest without a commit:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/orca-infra/orca/main/cli/install.sh | bash -s -- <commit>
+```
+
+Or work without orca, from the project's folder (this is what `orca fallback` runs):
+
+```sh
+docker run -it --rm -v "$PWD:/workspace" -v ~/.orca/projects/<project>/home:/home/node orca:latest bash
 ```
 
 ## Docker Desktop itself

@@ -137,7 +137,18 @@ update() {
 LABEL orca.e2e=newer" >/dev/null
   in_tty start "$T/dev/demo" | tee out.txt
   docker tag "$real" orca:latest
-  grep -q "Image update available" out.txt || fail "should notice the newer image"
+  grep -q "Not on the current image" out.txt || fail "should notice it isn't on the current image"
+
+  step "image use previous goes back, and the image it replaces is kept"
+  docker build -q -t orca:latest - <<<"FROM orca:latest
+LABEL orca.e2e=newer" >/dev/null
+  newer=$(docker image inspect -f '{{.Id}}' orca:latest)
+  "$ORCA" image use "$real" </dev/null | tee out.txt
+  [ "$(docker image inspect -f '{{.Id}}' orca:latest)" = "$real" ] || fail "orca:latest should be the one asked for"
+  [ "$(docker image inspect -f '{{.Id}}' orca:previous)" = "$newer" ] || fail "orca:previous should be the one it replaced"
+  "$ORCA" image use previous </dev/null >/dev/null
+  [ "$(docker image inspect -f '{{.Id}}' orca:latest)" = "$newer" ] || fail "image use previous should swap back"
+  docker tag "$real" orca:latest
 }
 
 forwards() {
@@ -233,6 +244,10 @@ fallbacks() {
   step "your folder, a fresh home"
   docker run --rm -v "$T/dev/demo:/workspace" orca:latest \
     bash -c "test -f /workspace/in-folder && touch ~/writable && $tools" >/dev/null || fail "the folder, a writable home or a tool is missing"
+
+  step "orca fallback runs the same, printing the command"
+  in_tty "fallback --kind fresh-home $T/dev/demo" | tee out.txt
+  grep -q "docker run -it --rm -v $T/dev/demo:/workspace orca:latest bash" out.txt || fail "orca fallback should print what it runs"
 
   step "no folders from the Mac: a clone in ~, kept when the container stops"
   docker rm -f orca-fallback-e2e >/dev/null 2>&1 || true

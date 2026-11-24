@@ -131,24 +131,15 @@ test("update pulls the published image and names it orca:latest", async () => {
   await update(t.ctx, { self: false });
   // In the terminal, to show its progress
   expect(t.attached).toContainEqual(["pull", REMOTE_IMAGE]);
-  expect(t.calls).toContainEqual(["tag", REMOTE_IMAGE, "orca:latest"]);
+  expect(t.state.latest).toBe("sha256:new");
   expect(t.output()).toContain("updated");
 });
 
 test("update keeps the image it replaces as orca:previous, and says how to go back to it", async () => {
   const t = fakeContext({ latest: "sha256:old", pulled: "sha256:new" });
   await update(t.ctx, { self: false });
-  expect(t.calls).toContainEqual(["tag", "sha256:old", "orca:previous"]);
   expect(t.state.tags?.["orca:previous"]).toBe("sha256:old");
-  expect(t.output()).toContain('{"image": "orca:previous"}');
-});
-
-test("update with a pinned image says new containers still use the pinned one", async () => {
-  const t = fakeContext({ latest: "sha256:old", pulled: "sha256:new" });
-  mkdirSync(t.ctx.orcaDir, { recursive: true });
-  writeFileSync(join(t.ctx.orcaDir, "config.json"), JSON.stringify({ image: "orca:previous" }));
-  await update(t.ctx, { self: false });
-  expect(t.output()).toContain("config.json pins orca:previous");
+  expect(t.output()).toContain("orca image use previous");
 });
 
 test("update says when the image was already current", async () => {
@@ -185,10 +176,10 @@ test("update replaces orca with the published build after checking its checksum"
   });
   await update(t.ctx, { self: s.opts });
   expect(readFileSync(s.execPath, "utf8")).toBe("new binary");
-  expect(t.output()).toContain("aaa → bbb");
+  expect(t.output()).toContain("orca: now bbb (was aaa)");
   // The one it replaced stays beside it, to go back to
   expect(readFileSync(`${s.execPath}.previous`, "utf8")).toBe("old binary");
-  expect(t.output()).toContain(`mv ${s.execPath}.previous ${s.execPath}`);
+  expect(t.output()).toContain("orca self use previous");
 });
 
 test("update refuses a build whose checksum doesn't match", async () => {

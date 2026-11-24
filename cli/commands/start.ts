@@ -4,8 +4,8 @@ import { OrcaError, projectsDir, tilde, type Context } from "../context";
 import {
   containerName,
   docker,
+  CURRENT_IMAGE,
   homeDir,
-  imageName,
   inspectImage,
   latestImage,
   listContainers,
@@ -15,6 +15,7 @@ import {
   recordDir,
 } from "../projects";
 import { readConfig } from "../config";
+import { built, ensureImage } from "../images";
 import { applyCreation, checkWithout, containerArgs, workspaceFile } from "../features";
 import { applySettings, describeResources, effective } from "../box-settings";
 import { allForwards, ensureNetwork, PROXY, syncProxy } from "../proxy";
@@ -33,6 +34,10 @@ export type StartOptions = {
   without?: string[];
   /** Start it without a terminal, to keep running until it's stopped (orca up) */
   up?: boolean;
+  /** The image to make its container from, when this makes one (image names as in orca image use) */
+  image?: string;
+  /** Only (re)make its container, stopped, without starting it or opening a terminal */
+  makeOnly?: boolean;
 };
 
 /** Starts (or enters) the container for the project folder at `path`; with `up`, keeps it running instead. */
@@ -54,6 +59,15 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   const home = homeDir(ctx, name);
   const containers = await listContainers(ctx);
   const existing = containers.find((c) => c.name === container) ?? null;
+  if (opts.image && existing && !opts.fresh) {
+    const on = await inspectImage(ctx, existing.image);
+    throw new OrcaError(
+      `${container} already exists, made from the image built ${built(on)}; --image applies when a container is made.`,
+      `To remake it from that image (keeps the folder and the home): ${existing.running ? `orca stop ${name}, then ` : ""}orca start --fresh --image ${opts.image} ${tilde(ctx, folder)}`,
+    );
+  }
+  // Downloaded now, before anything is removed, so a missing image changes nothing
+  const chosen = opts.image ? await ensureImage(ctx, opts.image) : null;
 
   // A home created now gets the creation features; an existing one is never changed
   const newHome = isEmpty(home);
@@ -134,15 +148,17 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
     return opts.up ? up(ctx, box) : openTerminal(ctx, box, opts);
   }
 
-  const latest = await latestImage(ctx);
-  if (!latest)
-    throw readConfig(ctx).image
-      ? new OrcaError(`The image config.json pins, ${imageName(ctx)}, isn't on this Mac.`, `Download it: docker pull ${imageName(ctx)}, or remove "image" from ${tilde(ctx, join(ctx.orcaDir, "config.json"))}`)
-      : new OrcaError("The orca image isn't on this Mac yet.", "Run: orca update");
+  const latest = chosen?.image ?? (await latestImage(ctx));
+  if (!latest) throw new OrcaError("The orca image isn't on this Mac yet.", "Run: orca update");
   if (opts.up && latest.generation < UP) throw new OrcaError("The orca image is from before orca up.", "Run: orca update");
   ctx.print(`Creating ${name}: ${tilde(ctx, folder)}, home in ${tilde(ctx, home)}`);
   if (newHome) await applyCreation(ctx, home, without);
-  const create = ["--name", container, "--label", `orca.project=${name}`, ...containerArgs({ name, folder, home, network, resources: effective(ctx, name) }), imageName(ctx)];
+  const create = ["--name", container, "--label", `orca.project=${name}`, ...containerArgs({ name, folder, home, network, resources: effective(ctx, name) }), chosen?.ref ?? CURRENT_IMAGE];
+  if (opts.makeOnly) {
+    await docker(ctx, ["create", ...create]);
+    ctx.print(`Made ${container} from the image built ${built(latest)}; orca start opens it.`);
+    return 0;
+  }
   if (latest.generation < TERMINALS) {
     // An image from before terminals: its main process is the first window's shell
     ctx.print("This image has no terminals yet; for them: orca update, then orca start --fresh");
@@ -267,8 +283,8 @@ async function noticeOutdated(ctx: Context, used: string, folder: string, name: 
   // Dates only help when they tell the two images apart
   ctx.print(
     usedBuilt && newestBuilt && usedBuilt !== newestBuilt
-      ? `Image update available: this container's image was built ${usedBuilt}, the newest ${newestBuilt}.`
-      : "Image update available: this container was made from an older orca image.",
+      ? `Not on the current image: this container's image was built ${usedBuilt}, the current one ${newestBuilt}.`
+      : "Not on the current image: this container was made from another orca image.",
   );
   ctx.print(`  To switch:  orca stop ${name}, then orca start --fresh ${tilde(ctx, folder)}`);
   for (const line of RECREATING) ctx.print(`  ${line}`);

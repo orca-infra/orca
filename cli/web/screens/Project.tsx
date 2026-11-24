@@ -79,10 +79,10 @@ function ImageUpdate({ p }: { p: ProjectDetail }) {
   const running = p.state === "running";
   return (
     <div className="mt-6 rounded-md border border-warning/50 px-4 py-3 text-sm">
-      <p className="font-medium text-warning">Image update available</p>
+      <p className="font-medium text-warning">Not on the current image</p>
       <p className="mt-1 text-pretty">
-        {used && newest && used !== newest ? `This container's image was built ${used}; the newest, ${newest}.` : "This container was made from an older orca image."} Recreating it
-        switches to the new one.
+        {used && newest && used !== newest ? `This container's image was built ${used}; the current one, ${newest}.` : "This container was made from another orca image."} Recreating it
+        switches to the current one.
       </p>
       <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 text-muted-foreground">
         <dt>Kept</dt>

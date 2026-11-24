@@ -147,7 +147,7 @@ test("an out-of-date container says what recreating keeps and loses, then opens 
   t.state.containers.push({ name: "orca-app", image: "sha256:old", labels: T, workspace: dir, home: homeOf(t) });
   await start(t.ctx, dir, {});
   const out = t.output();
-  expect(out).toContain("Image update available");
+  expect(out).toContain("Not on the current image");
   expect(out).toContain("2026-09-02");
   expect(out).toContain("orca stop app, then orca start --fresh");
   expect(out).toMatch(/Kept:.*~/);
@@ -160,7 +160,7 @@ test("the update notice leaves out build dates that can't tell the images apart"
   const dir = folder(t.home);
   t.state.containers.push({ name: "orca-app", image: "sha256:old", labels: T, workspace: dir, home: homeOf(t) });
   await start(t.ctx, dir, {});
-  expect(t.output()).toContain("made from an older orca image");
+  expect(t.output()).toContain("made from another orca image");
   expect(t.output()).not.toContain("22:08");
 });
 
@@ -380,20 +380,46 @@ test("box settings that can't be applied are skipped on a yes, saying what it st
   expect(t.attached).toHaveLength(1);
 });
 
-test("an image pinned in config.json is the one new containers are made from", async () => {
-  const t = fakeContext({ tags: { "orca:previous": "sha256:old" } });
-  mkdirSync(t.ctx.orcaDir, { recursive: true });
-  writeFileSync(join(t.ctx.orcaDir, "config.json"), JSON.stringify({ image: "orca:previous" }));
-  await start(t.ctx, folder(t.home), {});
-  expect(t.calls.find((c) => c[0] === "run")!.at(-1)).toBe("orca:previous");
+test("--image makes a new container from that image, downloading a published one first", async () => {
+  const t = fakeContext({ published: { "2026-11-20-abc1234": "sha256:old" } });
+  await start(t.ctx, folder(t.home), { image: "2026-11-20-abc1234" });
+  expect(t.attached[0]).toEqual(["pull", "ghcr.io/orca-infra/orca:2026-11-20-abc1234"]);
+  expect(t.state.containers[0].image).toBe("sha256:old");
+  // The current image stays as it was
+  expect(t.state.latest).toBe("sha256:new");
 });
 
-test("a pinned image that isn't on this Mac says how to get it, or unpin it", async () => {
+test("--image previous with none kept says so, and makes nothing", async () => {
   const t = fakeContext();
-  mkdirSync(t.ctx.orcaDir, { recursive: true });
-  writeFileSync(join(t.ctx.orcaDir, "config.json"), JSON.stringify({ image: "ghcr.io/orca-infra/orca:2026-11-01-abc1234" }));
-  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({
-    message: expect.stringContaining("isn't on this Mac"),
-    fix: expect.stringContaining("docker pull ghcr.io/orca-infra/orca:2026-11-01-abc1234"),
+  await expect(start(t.ctx, folder(t.home), { image: "previous" })).rejects.toMatchObject({ message: expect.stringContaining("no previous image") });
+  expect(t.state.containers).toHaveLength(0);
+});
+
+test("--image on an existing container says it applies when one is made, and how to remake it", async () => {
+  const t = fakeContext();
+  const dir = folder(t.home);
+  t.state.containers.push({ name: "orca-app", running: true, labels: TU, workspace: dir, home: homeOf(t), image: "sha256:new" });
+  await expect(start(t.ctx, dir, { image: "previous" })).rejects.toMatchObject({
+    message: expect.stringContaining("--image applies when a container is made"),
+    fix: "To remake it from that image (keeps the folder and the home): orca stop app, then orca start --fresh --image previous ~/dev/app",
   });
+});
+
+test("--fresh --image remakes a container from that image, keeping the home", async () => {
+  const t = fakeContext({ tags: { "orca:previous": "sha256:old" } });
+  const dir = folder(t.home);
+  mkdirSync(homeOf(t), { recursive: true });
+  writeFileSync(join(homeOf(t), ".bashrc"), "");
+  t.state.containers.push({ name: "orca-app", labels: TU, workspace: dir, home: homeOf(t), image: "sha256:new" });
+  await start(t.ctx, dir, { fresh: true, image: "previous" });
+  expect(t.state.containers.find((c) => c.name === "orca-app")!.image).toBe("sha256:old");
+  expect(existsSync(join(homeOf(t), ".bashrc"))).toBe(true);
+});
+
+test("makeOnly makes the container stopped, without a terminal", async () => {
+  const t = fakeContext();
+  await start(t.ctx, folder(t.home), { makeOnly: true });
+  expect(t.calls.some((c) => c[0] === "create")).toBe(true);
+  expect(t.state.containers[0].running).toBe(false);
+  expect(t.attached).toHaveLength(0);
 });

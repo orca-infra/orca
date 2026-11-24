@@ -136,8 +136,8 @@ test("forwards: a URL too, what it still needs to open, and removing just it", a
 
 test("an image update: what's kept and reset, and Recreate waits until it's stopped", async () => {
   const { screen, launched } = await open("/p/app", [{ name: "app", container: "running", outdated: true }]);
-  expect(await screen.findByText("Image update available")).toBeTruthy();
-  expect(screen.getByText(/built .*; the newest/)).toBeTruthy();
+  expect(await screen.findByText("Not on the current image")).toBeTruthy();
+  expect(screen.getByText(/built .*; the current one/)).toBeTruthy();
   const recreate = screen.getByRole("button", { name: "Recreate in Terminal" }) as HTMLButtonElement;
   expect(recreate.disabled).toBe(true);
 

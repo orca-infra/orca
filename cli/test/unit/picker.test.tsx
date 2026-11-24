@@ -77,13 +77,13 @@ test("with no projects it says how to make one, and only offers new and quit", (
 test("u updates the selected project's image, offered only when it has an update", async () => {
   const { stdin, chosen, lastFrame } = setup([project("a"), project("b", { outdated: true })]);
   await tick();
-  expect(lastFrame()).not.toContain("u update image");
+  expect(lastFrame()).not.toContain("u switch to current image");
   stdin.write("u");
   await tick();
   expect(chosen).toEqual([]);
   stdin.write(DOWN);
   await tick();
-  expect(lastFrame()).toContain("u update image");
+  expect(lastFrame()).toContain("u switch to current image");
   stdin.write("u");
   await tick();
   expect(chosen).toEqual([{ action: "update", project: "b" }]);

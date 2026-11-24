@@ -1,46 +1,26 @@
 import { chmodSync, copyFileSync, renameSync, writeFileSync } from "node:fs";
 import { OrcaError, type Context } from "../context";
-import { readConfig } from "../config";
-import { docker, imageName, inspectImage } from "../projects";
+import { makeCurrent } from "../images";
+import { docker, inspectImage } from "../projects";
+import { RELEASES, REMOTE_IMAGE, REPO } from "../release";
 
-declare const ORCA_VERSION: string | undefined, ORCA_REPO: string | undefined, ORCA_BUILT: string | undefined;
-/** The commit this `orca` was built from; "dev" when running from source. */
-export const VERSION = typeof ORCA_VERSION === "string" ? ORCA_VERSION : "dev";
-/** The repo it was built in (owner/name), which it updates itself and its image from. */
-export const REPO = typeof ORCA_REPO === "string" ? ORCA_REPO : "orca-infra/orca";
-/** The day its commit was made (yyyy-mm-dd), so an update can show the changelog entries since. */
-export const BUILT = typeof ORCA_BUILT === "string" ? ORCA_BUILT : "";
-
-export const REMOTE_IMAGE = `ghcr.io/${REPO.toLowerCase()}:latest`;
-/**
- * CI publishes each build as its own release, cli-<commit>, holding orca-<os>-<arch>, its
- * .sha256, `version` and CHANGELOG.md; the newest is marked latest. Reading `version` from the
- * latest first, then everything else from that one release, keeps a download from mixing two builds.
- */
-export const RELEASES = `https://github.com/${REPO}/releases`;
+export { BUILT, RELEASES, REMOTE_IMAGE, REPO, VERSION } from "../release";
 
 export type SelfUpdate = { version: string; built: string; execPath: string; fetch: typeof fetch; platform: string; arch: string };
 
 export async function update(ctx: Context, opts: { self: SelfUpdate | false }): Promise<void> {
-  const before = (await inspectImage(ctx, "orca:latest"))?.id;
   ctx.print(`Image: checking ${REMOTE_IMAGE}…`);
   // In the terminal, so Docker shows its download progress
   if ((await ctx.docker.attach(["pull", REMOTE_IMAGE])) !== 0) {
     await docker(ctx, ["version"]); // turns "Docker isn't running" into its own message
     throw new OrcaError(`Couldn't download ${REMOTE_IMAGE} (Docker's message is above).`, "If the image is private: gh auth token | docker login ghcr.io -u <github-user> --password-stdin");
   }
-  await docker(ctx, ["tag", REMOTE_IMAGE, "orca:latest"]);
-  const after = (await inspectImage(ctx, "orca:latest"))?.id;
-  if (after === before) ctx.print("Image: up to date.");
+  const pulled = await inspectImage(ctx, REMOTE_IMAGE);
+  if (!pulled || !(await makeCurrent(ctx, pulled))) ctx.print("Image: up to date.");
   else {
-    ctx.print("Image: updated. Containers switch to it when recreated; `orca start` says when one is out of date.");
-    // The one it replaces stays, to go back to if the new one is broken
-    if (before) {
-      await docker(ctx, ["tag", before, "orca:previous"]);
-      ctx.print(`  The image it replaces is kept as orca:previous. To make containers from it again: {"image": "orca:previous"} in ~/.orca/config.json`);
-    }
+    ctx.print("Image: updated. Containers switch to it when recreated; `orca start` says when one isn't on it.");
+    ctx.print("  The one it replaces is kept: orca image use previous goes back to it.");
   }
-  if (readConfig(ctx).image) ctx.print(`  config.json pins ${imageName(ctx)}, so new containers are made from that; remove "image" from it to use orca:latest.`);
 
   if (opts.self) await updateSelf(ctx, opts.self);
 }
@@ -50,39 +30,45 @@ async function updateSelf(ctx: Context, s: SelfUpdate) {
     ctx.print("orca: running from source, so not updating itself.");
     return;
   }
-  const asset = `orca-${s.platform}-${s.arch === "x64" ? "x64" : s.arch}`;
-  const get = async (path: string) => {
-    const r = await s.fetch(`${RELEASES}/${path}`);
-    if (!r.ok) throw new OrcaError(`Couldn't download ${path} (${r.status}).`, "Check your connection and try again.");
-    return r;
-  };
-  const latest = (await (await get("latest/download/version")).text()).trim();
+  const latest = (await (await get(s, "latest/download/version")).text()).trim();
   if (latest === s.version) {
     ctx.print("orca: up to date.");
     return;
   }
-  ctx.print(`orca: downloading ${latest} (about 70 MB; GitHub can take a minute)…`);
-  const binary = await download(await get(`download/cli-${latest}/${asset}`));
-  const expected = (await (await get(`download/cli-${latest}/${asset}.sha256`)).text()).trim().split(/\s+/)[0];
+  await installBuild(ctx, s, latest);
+}
+
+const get = async (s: SelfUpdate, path: string) => {
+  const r = await s.fetch(`${RELEASES}/${path}`);
+  if (!r.ok) throw new OrcaError(`Couldn't download ${path} (${r.status}).`, "Check your connection and try again.");
+  return r;
+};
+
+/** Installs a published build in place of this one, keeping this one beside it as <orca>.previous. */
+export async function installBuild(ctx: Context, s: SelfUpdate, version: string) {
+  const asset = `orca-${s.platform}-${s.arch === "x64" ? "x64" : s.arch}`;
+  const exists = await s.fetch(`${RELEASES}/download/cli-${version}/${asset}.sha256`).catch(() => null);
+  if (!exists?.ok) throw new OrcaError(`There's no published build ${version} for ${asset.slice(5)}.`, "See what's published: orca self ls");
+  const expected = (await exists.text()).trim().split(/\s+/)[0];
+  ctx.print(`orca: downloading ${version} (about 70 MB; GitHub can take a minute)…`);
+  const binary = await download(await get(s, `download/cli-${version}/${asset}`));
   const actual = new Bun.CryptoHasher("sha256").update(binary).digest("hex");
   if (actual !== expected) throw new OrcaError(`The downloaded orca doesn't match its published checksum; not installing it.`);
 
   const next = `${s.execPath}.new`;
   // The one it replaces stays beside it, to go back to if the new one is broken
-  const previous = `${s.execPath}.previous`;
   try {
     writeFileSync(next, binary);
     chmodSync(next, 0o755);
-    copyFileSync(s.execPath, previous);
+    copyFileSync(s.execPath, `${s.execPath}.previous`);
     renameSync(next, s.execPath);
   } catch {
     throw new OrcaError(`Can't replace ${s.execPath}.`, `Reinstall it: curl -fsSL https://raw.githubusercontent.com/${REPO}/main/cli/install.sh | bash`);
   }
-  ctx.print(`orca: updated (${s.version} → ${latest}).`);
-  ctx.print(`  The one it replaces is kept as ${previous}. To go back to it: mv ${previous} ${s.execPath}`);
+  ctx.print(`orca: now ${version} (was ${s.version}). The one it replaces is kept: orca self use previous goes back to it.`);
 
   // Extra: a missing or unreadable changelog never fails an update that has already happened
-  const changelog = await s.fetch(`${RELEASES}/download/cli-${latest}/CHANGELOG.md`).catch(() => null);
+  const changelog = await s.fetch(`${RELEASES}/download/cli-${version}/CHANGELOG.md`).catch(() => null);
   const news = changelog?.ok ? changesSince(await changelog.text(), s.built) : [];
   if (news.length) ctx.print(["", "What's new (CHANGELOG.md):", ...news.map((n) => `  ${n}`)].join("\n"));
 }

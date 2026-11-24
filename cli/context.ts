@@ -26,6 +26,8 @@ export type Context = {
   host: (argv: string[]) => Promise<Result>;
   /** A hostname's addresses, looked up on the Mac as a browser there would; none if it doesn't resolve */
   lookup: (hostname: string) => Promise<string[]>;
+  /** The web, for what's published on GitHub (images, orca's builds) */
+  fetch: (url: string, init?: RequestInit) => Promise<Response>;
 };
 
 export function realContext(): Context {
@@ -54,6 +56,7 @@ export function realContext(): Context {
         return { code: 127, stdout: "", stderr: `${argv[0]}: command not found` };
       }
     },
+    fetch: (url, init) => fetch(url, init),
     lookup: async (hostname) => {
       const timeout = new Promise<[]>((resolve) => setTimeout(() => resolve([]), 2000));
       const found = lookup(hostname, { all: true }).then((all) => all.map((a) => a.address), () => []);

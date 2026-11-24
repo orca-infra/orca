@@ -2,6 +2,9 @@
 import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { del } from "./commands/delete";
+import { fallback, KINDS } from "./commands/fallback";
+import { imageLs, imageUse } from "./commands/image";
+import { selfLs, selfUse } from "./commands/self";
 import { forward } from "./commands/forward";
 import { list } from "./commands/list";
 import { create } from "./commands/new";
@@ -25,7 +28,10 @@ Usage:
                             The container stops when its last terminal ends.
       --new                 open a new terminal without asking
       --terminal <name>     attach to that terminal (or open it under that name)
-      --fresh               recreate the container, e.g. on a newer image
+      --fresh               recreate the container, e.g. on a newer image (keeps the
+                            folder and the home)
+      --image <name>        make its container from that image, when this makes one
+                            (new, or --fresh): names as for orca image use
       --without <feature>   leave out a feature: one that copies something from the Mac
                             when this creates the project (git-identity), or the
                             workspace-file (container-features.md)
@@ -34,7 +40,7 @@ Usage:
   orca up [folder]          start a folder's container (creating it if need be) without a
                             terminal, to keep running until orca stop, with or without
                             terminals: for an editor attached to it, or a server
-      --fresh, --without    as for start
+      --fresh, --image, --without  as for start
   orca stop [project]       stop a project's container (default: this folder's), after
                             listing the terminals that ends
       --yes                 don't ask to confirm
@@ -60,9 +66,23 @@ Usage:
       --remove <port|url>   stop forwarding a port, or serving it at one URL
       --project <name>      a project other than the one for this folder
   orca update               get the newest image, and the newest orca
+  orca image ls             the current image (what new containers are made from), the
+                            previous one, the published ones, and which projects use each
+  orca image use <name>     make an image the current one, keeping the one it replaces:
+                            previous, latest (the newest published), or a published
+                            <yyyy-mm-dd>-<commit>. Containers switch when they're remade
+  orca self ls              this orca's build, the previous one, and the published ones
+  orca self use <build>     switch orca to a published build, latest, or previous
+  orca fallback [folder]    work in a plain container, without orca's terminals, proxy or
+                            networks, when orca's usual one doesn't work (FALLBACKS.md)
+      --kind <kind>         ${Object.keys(KINDS).join(", ")} (asks when not given)
+      --image <name>        as for orca image use
 
 Your code is never deleted. Projects are in ~/.orca/projects; settings in
 ~/.orca/config.json (e.g. {"proxyPort": 7320, "boxSettings": {"memory": "12g"}}).`;
+
+/** This orca, for updating or switching itself */
+const self = () => ({ version: VERSION, built: BUILT, execPath: process.execPath, fetch, platform: process.platform, arch: process.arch });
 
 async function main(all: string[]): Promise<number> {
   if (all[0] === VIEW_COMMAND) return drawView(all[1]);
@@ -88,6 +108,8 @@ async function main(all: string[]): Promise<number> {
       cpus: { type: "string" },
       defaults: { type: "boolean" },
       "no-open": { type: "boolean" },
+      image: { type: "string" },
+      kind: { type: "string" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean" },
     },
@@ -112,9 +134,9 @@ async function main(all: string[]): Promise<number> {
       return pick(ctx);
     case "start":
       if (inner && inner.length === 0) throw new OrcaError("Nothing after --.", "orca start [folder] -- <command>");
-      return start(ctx, args[0] ?? ".", { fresh: values.fresh, command: inner, new: values.new, terminal: values.terminal, without: values.without });
+      return start(ctx, args[0] ?? ".", { fresh: values.fresh, command: inner, new: values.new, terminal: values.terminal, without: values.without, image: values.image });
     case "up":
-      return start(ctx, args[0] ?? ".", { up: true, fresh: values.fresh, without: values.without });
+      return start(ctx, args[0] ?? ".", { up: true, fresh: values.fresh, without: values.without, image: values.image });
     case "stop": {
       const project = args[0] ?? projectAt(ctx, process.cwd());
       if (!project) throw new OrcaError("This folder isn't in a project.", "orca stop <project>");
@@ -150,8 +172,23 @@ async function main(all: string[]): Promise<number> {
     case "serve":
       return serve(ctx, { open: !values["no-open"] });
     case "update":
-      await update(ctx, { self: { version: VERSION, built: BUILT, execPath: process.execPath, fetch, platform: process.platform, arch: process.arch } });
+      await update(ctx, { self: self() });
       return 0;
+    case "image": {
+      const [verb, name] = args;
+      if (verb === "ls" && !name) return imageLs(ctx).then(() => 0);
+      if (verb === "use" && name && args.length === 2) return imageUse(ctx, name).then(() => 0);
+      throw new OrcaError(`orca image ${args.join(" ")}: not a command.`, "orca image ls, or orca image use <name>");
+    }
+    case "self": {
+      const [verb, name] = args;
+      if (verb === "ls" && !name) return selfLs(ctx, self()).then(() => 0);
+      if (verb === "use" && name && args.length === 2) return selfUse(ctx, self(), name).then(() => 0);
+      throw new OrcaError(`orca self ${args.join(" ")}: not a command.`, "orca self ls, or orca self use <build>");
+    }
+    case "fallback":
+      if (args.length > 1) throw new OrcaError("orca fallback takes one folder.", "orca fallback [folder]");
+      return fallback(ctx, args[0] ?? ".", { kind: values.kind, image: values.image });
     default:
       throw new OrcaError(`There's no command "${command}".`, "See: orca --help");
   }

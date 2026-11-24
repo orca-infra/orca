@@ -38,8 +38,12 @@ export type FakeState = {
   /** Images made before terminals (no orca.terminals label), or before orca up (no orca.up) */
   noTerminals?: string[];
   noUp?: string[];
-  /** Image names besides orca:latest, and the ids they point at (e.g. orca:previous) */
+  /** Image names besides orca:latest on this Mac, and the ids they point at (e.g. orca:previous) */
   tags?: Record<string, string>;
+  /** Published images by their dated tag (yyyy-mm-dd-commit), and their ids; `docker pull` brings one here */
+  published?: Record<string, string>;
+  /** orca's published builds, as GitHub's releases API lists them */
+  releases?: { tag_name: string; published_at: string }[];
   /** what `docker pull` makes orca:latest's remote tag point at */
   pulled?: string;
   failPull?: boolean;
@@ -58,6 +62,8 @@ export function fakeDocker(state: FakeState) {
   const ok = (stdout = ""): Result => ({ code: 0, stdout, stderr: "" });
   const fail = (stderr: string): Result => ({ code: 1, stdout: "", stderr });
   const find = (n: string) => state.containers.find((c) => c.name === n);
+  // An image name, as Docker finds it on this Mac: orca:latest, an id, or another tag
+  const resolve = (ref: string) => (ref === "orca:latest" ? state.latest : ref.startsWith("sha256:") ? ref : state.tags?.[ref]);
   const imageLabels = (id: string): Record<string, string> =>
     state.noTerminals?.includes(id) ? {} : state.noUp?.includes(id) ? { "orca.terminals": "1" } : { "orca.terminals": "1", "orca.up": "1" };
 
@@ -107,8 +113,7 @@ export function fakeDocker(state: FakeState) {
         return ok(JSON.stringify(found.map(inspected)));
       }
       if (cmd === "image" && rest[0] === "inspect") {
-        const ref = rest[rest.length - 1];
-        const id = ref === "orca:latest" ? state.latest : ref.startsWith("sha256:") ? ref : state.tags?.[ref];
+        const id = resolve(rest[rest.length - 1]);
         if (!id) return fail("No such image");
         return ok(JSON.stringify([{ Id: id, Created: state.created[id] ?? "2026-01-01T00:00:00Z", Config: { Labels: imageLabels(id) } }]));
       }
@@ -123,17 +128,17 @@ export function fakeDocker(state: FakeState) {
         return ok();
       }
       if (cmd === "network") return network(rest);
-      if (cmd === "run" && rest[0] === "-d") {
+      if ((cmd === "run" && rest[0] === "-d") || cmd === "create") {
         const flag = (f: string) => rest.flatMap((a, i) => (a === f ? [rest[i + 1]] : []));
         const taken = flag("-p").map((p) => Number(p.split(":")[1])).find((p) => state.taken?.includes(p));
         if (taken) return fail(`Bind for 127.0.0.1:${taken} failed: port is already allocated`);
         // Like Docker: the image is the last argument, and the container gets its labels too
         const ref = rest[rest.length - 1];
-        const image = ref === "orca:latest" ? state.latest! : (state.tags?.[ref] ?? ref);
+        const image = resolve(ref) ?? ref;
         const labels = { ...imageLabels(image), ...Object.fromEntries(flag("--label").map((l) => l.split("=") as [string, string])) };
         const limit = (f: string) => rest.find((a) => a.startsWith(`${f}=`))?.slice(f.length + 1);
         const mount = (dest: string) => flag("-v").find((v) => v.endsWith(`:${dest}`))?.slice(0, -dest.length - 1);
-        state.containers.push({ name: flag("--name")[0], running: true, image, labels, networks: [], memory: Number(limit("--memory")), cpus: Number(limit("--cpus")), workspace: mount("/workspace"), home: mount("/home/node") });
+        state.containers.push({ name: flag("--name")[0], running: cmd === "run", image, labels, networks: [], memory: Number(limit("--memory")), cpus: Number(limit("--cpus")), workspace: mount("/workspace"), home: mount("/home/node") });
         return ok("id");
       }
       if (cmd === "update") {
@@ -186,16 +191,25 @@ export function fakeDocker(state: FakeState) {
       if (cmd === "exec" && rest.some((a) => a.endsWith("root.crt"))) return ok("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");
       if (cmd === "exec") return ok();
       if (cmd === "tag") {
-        if (rest[1] === "orca:latest") {
-          if (state.pulled) state.latest = state.pulled;
-        } else state.tags = { ...state.tags, [rest[1]]: rest[0] };
+        const id = resolve(rest[0]);
+        if (!id) return fail("No such image");
+        if (rest[1] === "orca:latest") state.latest = id;
+        else state.tags = { ...state.tags, [rest[1]]: id };
         return ok();
       }
       return fail(`fake docker: unhandled ${args.join(" ")}`);
     },
     async attach(args) {
       attached.push(args);
-      if (args[0] === "pull") return state.failPull ? 1 : 0;
+      if (args[0] === "pull") {
+        if (state.failPull) return 1;
+        // The published :latest is what `pulled` says; a dated one, what `published` has
+        const tag = args[1].split(":").pop()!;
+        const id = tag === "latest" ? (state.pulled ?? state.latest) : state.published?.[tag];
+        if (!id) return 1;
+        state.tags = { ...state.tags, [args[1]]: id };
+        return 0;
+      }
       return 0;
     },
   };
@@ -246,6 +260,13 @@ export function fakeContext(state: Partial<FakeState> = {}, answers: (string | n
       return key in host ? { code: 0, stdout: host[key] + "\n", stderr: "" } : { code: 1, stdout: "", stderr: "" };
     },
     lookup: async (hostname) => names[hostname] ?? [],
+    // What's published: GitHub's container registry (its tags) and orca's releases
+    fetch: async (url) => {
+      if (url.startsWith("https://ghcr.io/token")) return full.published ? Response.json({ token: "t" }) : new Response("", { status: 503 });
+      if (url.includes("/tags/list")) return Response.json({ tags: ["latest", "buildcache-arm64", ...Object.keys(full.published ?? {})] });
+      if (url.startsWith("https://api.github.com/repos/") && full.releases) return Response.json(full.releases);
+      return new Response("", { status: 404 });
+    },
   };
   return { ctx, home, state: full, calls, attached, lines, launched, output: () => lines.join("\n") };
 }

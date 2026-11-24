@@ -98,10 +98,7 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
     },
     {
       failed: `${name}'s own network couldn't be set up`,
-      skipping:
-        existing && !opts.fresh
-          ? `Its forwards won't reach it until it is; the next orca start tries again.`
-          : `It would be created on Docker's default network, so forwards won't reach it until it's recreated: orca start --fresh.`,
+      skipping: `Its forwards won't reach it until it's on it; the next orca start tries again.`,
       question: `Start ${name} without it?`,
     },
   );

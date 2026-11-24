@@ -76,6 +76,7 @@ Usage:
                             networks, when orca's usual one doesn't work
       --kind <kind>         ${Object.keys(KINDS).join(", ")} (asks when not given)
       --image <name>        as for orca image use
+      -- <command>          run a command instead of a shell
 
 Your code is never deleted. Projects are in ~/.orca/projects; settings in
 ~/.orca/config.json (e.g. {"proxyPort": 7320, "boxSettings": {"memory": "12g"}}).`;
@@ -187,7 +188,8 @@ async function main(all: string[]): Promise<number> {
     }
     case "fallback":
       if (args.length > 1) throw new OrcaError("orca fallback takes one folder.", "orca fallback [folder]");
-      return fallback(ctx, args[0] ?? ".", { kind: values.kind, image: values.image });
+      if (inner && inner.length === 0) throw new OrcaError("Nothing after --.", "orca fallback [folder] -- <command>");
+      return fallback(ctx, args[0] ?? ".", { kind: values.kind, image: values.image, command: inner });
     default:
       throw new OrcaError(`There's no command "${command}".`, "See: orca --help");
   }

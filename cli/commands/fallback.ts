@@ -2,7 +2,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { OrcaError, type Context } from "../context";
 import { ensureImage } from "../images";
-import { homeDir, listContainers } from "../projects";
+import { docker, homeDir, listContainers } from "../projects";
 import { projectAt } from "../proxy";
 
 /** The kinds of plain container orca fallback runs */
@@ -13,12 +13,19 @@ export const KINDS = {
 } as const;
 export type Kind = keyof typeof KINDS;
 
+/** The one place a fallback's docker command is made: run, and printed for pasting */
+export function fallbackArgs(f: { kind: Kind; folder: string; home: string | null; image: string; name: string; command?: string[] }): string[] {
+  const command = f.command?.length ? f.command : ["bash"];
+  if (f.kind === "no-folders") return ["run", "-it", "--name", f.name, f.image, ...command];
+  return ["run", "-it", "--rm", "-v", `${f.folder}:/workspace`, ...(f.kind === "home" ? ["-v", `${f.home}:/home/node`] : []), f.image, ...command];
+}
+
 /**
  * A plain container to work in when orca's usual one doesn't work: one `docker run`, with none
  * of orca's terminals, proxy or networks. Prints the command first, so it can be pasted when
- * even this doesn't run.
+ * even this doesn't run. `command` runs in place of a shell.
  */
-export async function fallback(ctx: Context, path: string, opts: { kind?: string; image?: string }): Promise<number> {
+export async function fallback(ctx: Context, path: string, opts: { kind?: string; image?: string; command?: string[] }): Promise<number> {
   const folder = resolve(path);
   const project = projectAt(ctx, folder);
   const home = project ? homeDir(ctx, project) : null;
@@ -37,18 +44,17 @@ export async function fallback(ctx: Context, path: string, opts: { kind?: string
   if (kind !== "no-folders" && !(existsSync(folder) && statSync(folder).isDirectory())) throw new OrcaError(`${folder} isn't a folder.`);
 
   const { ref } = await ensureImage(ctx, opts.image ?? "current");
-  let args: string[];
-  if (kind === "no-folders") {
-    // Kept when it exits, since the work is in it until pushed
-    const name = `orca-fallback-${project ?? basename(folder).replace(/[^a-zA-Z0-9_.-]/g, "-")}`;
-    const exists = (await listContainers(ctx)).some((c) => c.name === name);
-    args = exists ? ["start", "-ai", name] : ["run", "-it", "--name", name, ref, "bash"];
-    ctx.print(exists ? `Back into ${name}, as you left it.` : `In it: gh auth login, then cd ~ && gh repo clone <owner>/<repo>, then claude. Push before you're done.`);
-    ctx.print(`  Exiting keeps it: orca fallback --kind no-folders goes back in; docker rm ${name} removes it.`);
-  } else {
-    args = ["run", "-it", "--rm", "-v", `${folder}:/workspace`, ...(kind === "home" ? ["-v", `${home}:/home/node`] : []), ref, "bash"];
-    if (kind === "fresh-home") ctx.print("A fresh home: log in to Claude and gh inside. It's thrown away when you exit; your folder isn't.");
+  // Kept when it exits, since the work is in it until pushed
+  const name = `orca-fallback-${project ?? basename(folder).replace(/[^a-zA-Z0-9_.-]/g, "-")}`;
+  if (kind === "no-folders" && (await listContainers(ctx)).some((c) => c.name === name)) {
+    ctx.print(`Back into ${name}, as you left it. docker rm ${name} removes it once your work is pushed.`);
+    if (!opts.command?.length) return ctx.docker.attach(["start", "-ai", name]);
+    await docker(ctx, ["start", name]);
+    return ctx.docker.attach(["exec", "-it", name, ...opts.command]);
   }
+  if (kind === "no-folders") ctx.print("In it: gh auth login, then cd ~ && gh repo clone <owner>/<repo>, then claude. Push before you're done; exiting keeps it, and orca fallback goes back in.");
+  if (kind === "fresh-home") ctx.print("A fresh home: log in to Claude and gh inside. It's thrown away when you exit; your folder isn't.");
+  const args = fallbackArgs({ kind, folder, home, image: ref, name, command: opts.command });
   ctx.print(`Running (to paste if orca won't run): docker ${args.map(quote).join(" ")}`);
   return ctx.docker.attach(args);
 }

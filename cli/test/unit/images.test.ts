@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fallback } from "../../commands/fallback";
+import { fallback, fallbackArgs } from "../../commands/fallback";
 import { imageLs, imageUse } from "../../commands/image";
 import { selfLs, selfUse } from "../../commands/self";
 import { RELEASES } from "../../release";
@@ -162,4 +162,22 @@ test("fallback asks which, offering the home only when there is one", async () =
   await fallback(t.ctx, folder, {});
   expect(offered).toEqual(["fresh-home", "no-folders"]);
   await expect(fallback(t.ctx, folder, { kind: "home" })).rejects.toMatchObject({ fix: "Use a fresh one: orca fallback --kind fresh-home" });
+});
+
+test("FALLBACKS.md's command for when no orca runs is the one orca fallback makes", () => {
+  // The doc copies what the code makes; this keeps the copy the same
+  const doc = readFileSync(join(import.meta.dir, "../../../FALLBACKS.md"), "utf8").replace(/"/g, "");
+  const args = fallbackArgs({ kind: "home", folder: "$PWD", home: "~/.orca/projects/<project>/home", image: "orca:latest", name: "" });
+  expect(doc).toContain(`docker ${args.join(" ")}`);
+});
+
+test("fallback runs a command in place of a shell, also when going back into a kept container", async () => {
+  const t = world([["app", "sha256:new", false]]);
+  const folder = join(t.home, "dev/app");
+  await fallback(t.ctx, folder, { kind: "fresh-home", command: ["test", "-f", "/workspace/x"] });
+  expect(t.attached[0]).toEqual(["run", "-it", "--rm", "-v", `${folder}:/workspace`, "orca:latest", "test", "-f", "/workspace/x"]);
+  t.state.containers.push({ name: "orca-fallback-app", labels: {} });
+  await fallback(t.ctx, folder, { kind: "no-folders", command: ["true"] });
+  expect(t.calls).toContainEqual(["start", "orca-fallback-app"]);
+  expect(t.attached[1]).toEqual(["exec", "-it", "orca-fallback-app", "true"]);
 });

@@ -9,8 +9,9 @@ import type { Container } from "./docker";
  *
  * This list is the deprecations' source: what orca says about them comes from it.
  * To deprecate one: set its status to { deprecated: "yyyy-mm-dd" }; `orca start` then says to
- * recreate such containers before that date. To remove one: set it to "removed", delete the code
- * its entry lists, and the helper below that checks for it; the compiler finds what's left.
+ * recreate such containers before that date. To remove one: set it to "removed", delete its
+ * files and the helper below that checks for it (beforeHomes, hasTerminals); the compiler finds
+ * every caller.
  * compat.test.ts checks the list is well formed.
  */
 
@@ -29,8 +30,8 @@ export type Older = {
   id: string;
   /** What supporting them means */
   what: string;
-  /** Where that support is, to delete when it's removed */
-  code: string;
+  /** Files that exist only for them, removed with them (compat.test.ts checks they exist) */
+  files: string[];
   status: Status;
 };
 
@@ -39,14 +40,14 @@ export const OLDER: Older[] = [
     below: HOMES,
     id: "before-homes",
     what: "containers from before project homes, whose home is inside the container: orca-migrate.sh copies it out",
-    code: "beforeHomes() and its callers (loadProjects, start, delete, pick, the dashboard's not-migrated state); orca-migrate.sh, orca-migrate-select.sh, orca-legacy.sh, migrate/",
+    files: ["orca-migrate.sh", "orca-legacy.sh", "migrate"],
     status: "supported",
   },
   {
     below: TERMINALS,
     id: "before-terminals",
     what: "containers from images before terminals: their shells end with their window",
-    code: "hasTerminals() and its callers (plainShell and the no-terminals image path in start; stop, terminals, the dashboard)",
+    files: [],
     status: "supported",
   },
 ];

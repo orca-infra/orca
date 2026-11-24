@@ -65,7 +65,7 @@ export async function checkReady(ctx: Context, name: string, container: string, 
         : null;
   if (problem)
     throw new OrcaError(
-      `${container} isn't ready: ${problem}. The files on the Mac aren't affected.`,
+      `${container} isn't ready: ${problem}.`,
       `Try: orca stop ${name}, then orca start again. If it still isn't ready, restart Docker Desktop. To work meanwhile: orca fallback`,
     );
 }

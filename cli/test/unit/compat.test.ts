@@ -1,4 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { CURRENT, checkSupported, generation, HOMES, OLDER, olderFor, TERMINALS, type Status } from "../../compat";
 import type { Container } from "../../docker";
 import { fakeContext } from "../support/fake";
@@ -55,7 +57,8 @@ test("the list of older generations is well formed", () => {
   expect(OLDER.map((o) => o.below)).toEqual([...OLDER.map((o) => o.below)].sort((a, b) => a - b));
   for (const o of statuses.map((status, i) => ({ ...OLDER[i], status }))) {
     expect(o.below).toBeLessThanOrEqual(CURRENT);
-    expect(o.what && o.code).toBeTruthy();
+    expect(o.what).toBeTruthy();
+    for (const f of o.files) expect(existsSync(join(import.meta.dir, "../../..", f))).toBe(true);
     if (typeof o.status === "object") expect(Number.isNaN(Date.parse(o.status.deprecated)) || !/^\d{4}-\d{2}-\d{2}$/.test(o.status.deprecated)).toBe(false);
   }
 });

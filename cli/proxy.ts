@@ -209,8 +209,8 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
   }
 
   for (const n of networks) if (!proxy.networks.includes(n.name)) await docker(ctx, ["network", "connect", n.name, PROXY]);
-  // A reload is given the config itself, not the mounted file: Docker Desktop's Mac mounts can
-  // go on reporting a file's old size after it grows, so Caddy read it cut short ("unexpected EOF")
+  // A reload is handed the config by orca, so it doesn't depend on reading it through a folder
+  // shared from the Mac
   if (reload)
     await docker(ctx, ["exec", PROXY, "sh", "-c", 'printf %s "$1" > /tmp/Caddyfile && exec caddy reload --config /tmp/Caddyfile --adapter caddyfile', "sh", config]);
   if (forwards.some((f) => f.urls.some((u) => parseAddress(u).https))) await copyCa(ctx);

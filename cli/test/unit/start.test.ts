@@ -356,7 +356,7 @@ test("a project network that can't be made is skipped on a yes: a new container 
   const t = fakeContext({ failing: ["network create"] }, [""]);
   await start(t.ctx, folder(t.home), {});
   expect(t.output()).toContain("app's own network couldn't be set up: docker network failed");
-  expect(t.output()).toContain("orca start --fresh");
+  expect(t.output()).toContain("the next orca start tries again");
   const run = t.calls.find((c) => c[0] === "run")!;
   expect(run).not.toContain("--network");
   expect(t.attached).toHaveLength(1);

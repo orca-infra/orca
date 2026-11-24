@@ -12,7 +12,7 @@ Run in the project's folder, it asks which plain container to work in, and runs 
 
 - **Your folder and home**: when orca's own machinery is what's broken. Your logins, Claude's memory and sessions are there.
 - **Your folder, a fresh home**: when something in the home is what's broken (say, a Claude update or a dotfile that stops every shell). Log in again inside; this home is thrown away when you exit.
-- **No folders from the Mac**: when the container can't see the Mac's folders at all (Docker Desktop's file sharing has stopped: logins seem gone, `~` doesn't exist). Work from a clone (`gh auth login`, then `gh repo clone`), and push before you're done. Exiting keeps the container; `orca fallback` goes back into it.
+- **No folders from the Mac**: when the container can't see the Mac's folders (`/workspace` or `~` isn't there inside it). Work from a clone (`gh auth login`, then `gh repo clone`), and push before you're done. Exiting keeps the container; `orca fallback` goes back into it.
 
 Add `--image <name>` for another image (below). It prints the `docker` command it runs, to paste if even `orca fallback` stops working.
 

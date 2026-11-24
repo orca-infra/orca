@@ -230,31 +230,28 @@ dashboard() {
   kill $serve_pid
 }
 
-# FALLBACKS.md's commands, as written there but without a terminal (-it) and with checks in place
-# of an interactive shell: they must work with nothing from orca but its image
+# orca fallback, each kind, with checks in place of the shell (FALLBACKS.md's command for when no
+# orca runs is checked against the same code by a unit test)
 fallbacks() {
-  local home="$T/home"
-  mkdir -p "$home" && chmod 777 "$home" && touch "$T/dev/demo/in-folder" "$home/in-home"
+  in_tty start "$T/dev/demo" >/dev/null
+  local home="$ORCA_DIR/projects/demo/home"
+  touch "$T/dev/demo/in-folder" "$home/in-home"
   local tools='command -v claude && command -v gh && command -v git'
+  # Runs orca fallback in a pseudo-terminal (its docker run needs one); its exit is the command's
+  fb() { echo "cd '$T/dev/demo' && '$ORCA' fallback $1" >"$T/fb.sh"; script -qec "bash $T/fb.sh" /dev/null </dev/null; }
 
   step "your folder and home"
-  docker run --rm -v "$T/dev/demo:/workspace" -v "$home:/home/node" orca:latest \
-    bash -c "test -f /workspace/in-folder && test -f ~/in-home && $tools" >/dev/null || fail "the folder, the home or a tool is missing"
+  fb "--kind home -- bash -c 'test -f /workspace/in-folder && test -f ~/in-home && $tools'" >/dev/null || fail "the folder, the home or a tool is missing"
 
-  step "your folder, a fresh home"
-  docker run --rm -v "$T/dev/demo:/workspace" orca:latest \
-    bash -c "test -f /workspace/in-folder && touch ~/writable && $tools" >/dev/null || fail "the folder, a writable home or a tool is missing"
+  step "your folder, a fresh home, printing the command it runs"
+  fb "--kind fresh-home -- bash -c 'test -f /workspace/in-folder && touch ~/writable && $tools'" | tee out.txt >/dev/null || fail "the folder, a writable home or a tool is missing"
+  grep -q "docker run -it --rm -v $T/dev/demo:/workspace orca:latest bash -c" out.txt || fail "orca fallback should print what it runs"
 
-  step "orca fallback runs the same, printing the command"
-  in_tty "fallback --kind fresh-home $T/dev/demo" | tee out.txt
-  grep -q "docker run -it --rm -v $T/dev/demo:/workspace orca:latest bash" out.txt || fail "orca fallback should print what it runs"
-
-  step "no folders from the Mac: a clone in ~, kept when the container stops"
-  docker rm -f orca-fallback-e2e >/dev/null 2>&1 || true
-  local work='if [ -e ~/cloned ]; then echo again; else git clone -q --depth 1 https://github.com/orca-infra/orca ~/orca && test -f ~/orca/README.md && touch ~/cloned && echo first; fi'
-  [ "$(docker run --name orca-fallback-e2e orca:latest bash -c "$work")" = first ] || fail "cloning in a container with no Mac folders"
-  [ "$(docker start -a orca-fallback-e2e)" = again ] || fail "the clone should still be there when the container starts again"
-  docker rm -f orca-fallback-e2e >/dev/null
+  step "no folders from the Mac: a clone in ~, kept for going back in"
+  docker rm -f orca-fallback-demo >/dev/null 2>&1 || true
+  fb "--kind no-folders -- bash -c 'git clone -q --depth 1 https://github.com/orca-infra/orca ~/orca && touch ~/cloned'" >/dev/null || fail "cloning in a container with no Mac folders"
+  fb "--kind no-folders -- test -e /home/node/cloned" >/dev/null || fail "going back in should find the clone"
+  docker rm -f orca-fallback-demo >/dev/null
 }
 
 for s in "${SECTIONS[@]}"; do

@@ -4,9 +4,9 @@ import { type Context } from "../context";
 import { makeCurrent } from "../images";
 import { attach, docker } from "../docker";
 import { inspectImage } from "../projects";
-import { RELEASES, REMOTE_IMAGE, REPO } from "../release";
+import { RELEASES, REPO } from "../release";
+import { REMOTE_IMAGE } from "../names";
 
-export { BUILT, RELEASES, REMOTE_IMAGE, REPO, VERSION } from "../release";
 
 export type SelfUpdate = { version: string; built: string; execPath: string; fetch: typeof fetch; platform: string; arch: string };
 

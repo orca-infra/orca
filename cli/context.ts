@@ -76,7 +76,6 @@ export function realContext(): Context {
 
 export const projectsDir = (ctx: Context) => join(ctx.orcaDir, "projects");
 
-
 /** Shows a host path the way the user would type it. */
 export function tilde(ctx: Context, path: string): string {
   return path === ctx.home || path.startsWith(ctx.home + "/") ? "~" + path.slice(ctx.home.length) : path;

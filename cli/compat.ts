@@ -1,6 +1,7 @@
 import { OrcaError } from "./errors";
 import { type Context } from "./context";
 import type { Container } from "./docker";
+import { label, LABELS } from "./names";
 
 /**
  * Containers made by older orca versions, by generation: the one place orca tells them apart,
@@ -55,9 +56,9 @@ export const OLDER: Older[] = [
 
 /** A generation from labels: the label itself, or, on images before it, what they have. */
 export function labelGeneration(labels: Record<string, string>): number {
-  const g = Number(labels["orca.generation"]);
+  const g = Number(labels[LABELS.generation]);
   if (Number.isInteger(g) && g > 0) return g;
-  if (labels["orca.terminals"] === "1") return TERMINALS;
+  if (labels[LABELS.terminals] === "1") return TERMINALS;
   return HOMES;
 }
 

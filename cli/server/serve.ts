@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { VERSION } from "../commands/update";
+import { VERSION } from "../release";
 import { readConfig } from "../config";
 import { OrcaError } from "../errors";
 import { tilde, type Context } from "../context";

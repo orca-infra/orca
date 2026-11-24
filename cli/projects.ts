@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { beforeHomes, labelGeneration } from "./compat";
 import { projectsDir, type Context } from "./context";
 import { type Container, docker, parseContainer, probe } from "./docker";
+import { CURRENT_IMAGE } from "./names";
 
 /**
  * A project is a record, ~/.orca/projects/<name>/, holding its home (mounted as ~) and
@@ -28,7 +29,6 @@ export type Project = {
 
 export const recordDir = (ctx: Context, name: string) => join(projectsDir(ctx), name);
 export const homeDir = (ctx: Context, name: string) => join(recordDir(ctx, name), "home");
-export const containerName = (name: string) => `orca-${name}`;
 
 export function readFolder(ctx: Context, name: string): string | null {
   const file = join(recordDir(ctx, name), "project-path");
@@ -90,11 +90,6 @@ export async function listContainers(ctx: Context): Promise<Container[]> {
 
 /** `generation`: which orca made it (compat.ts) */
 export type Image = { id: string; created: string; generation: number };
-
-/** The current image, which new containers are made from (orca image use changes it) */
-export const CURRENT_IMAGE = "orca:latest";
-/** The one the last change of the current image replaced */
-export const PREVIOUS_IMAGE = "orca:previous";
 
 export async function latestImage(ctx: Context): Promise<Image | null> {
   return inspectImage(ctx, CURRENT_IMAGE);

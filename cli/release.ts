@@ -8,9 +8,6 @@ export const REPO = typeof ORCA_REPO === "string" ? ORCA_REPO : "orca-infra/orca
 /** The day its commit was made (yyyy-mm-dd), as orca self ls shows it */
 export const BUILT = typeof ORCA_BUILT === "string" ? ORCA_BUILT : "";
 
-/** The published image, without a tag; CI tags each one :latest and :<yyyy-mm-dd>-<commit> */
-export const REGISTRY_IMAGE = `ghcr.io/${REPO.toLowerCase()}`;
-export const REMOTE_IMAGE = `${REGISTRY_IMAGE}:latest`;
 /**
  * CI publishes each build as its own release, cli-<commit>, holding orca-<os>-<arch>, its
  * .sha256 and `version`; the newest is marked latest. Reading `version` from the

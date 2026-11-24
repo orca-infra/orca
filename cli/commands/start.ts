@@ -3,14 +3,15 @@ import { basename, join, resolve } from "node:path";
 import { OrcaError } from "../errors";
 import { projectsDir, tilde, type Context } from "../context";
 import { attach, docker, probe } from "../docker";
-import { containerName, CURRENT_IMAGE, homeDir, inspectImage, latestImage, listContainers, migrated, readFolder, recordDir } from "../projects";
+import { homeDir, inspectImage, latestImage, listContainers, migrated, readFolder, recordDir } from "../projects";
 import { readConfig } from "../config";
 import { built, ensureImage } from "../images";
 import { applyCreation, checkWithout, containerArgs, mounts, workspaceFile } from "../features";
 import { applySettings, describeResources, effective } from "../box-settings";
-import { allForwards, ensureNetwork, PROXY, syncProxy } from "../proxy";
+import { allForwards, ensureNetwork, syncProxy } from "../proxy";
 import { beforeHomes, checkSupported, hasTerminals, TERMINALS } from "../compat";
 import { activity, checkReady, describe, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
+import { containerName, CURRENT_IMAGE, label, PROXY } from "../names";
 
 export type StartOptions = {
   fresh?: boolean;
@@ -134,7 +135,7 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   if (!latest) throw new OrcaError("The orca image isn't on this Mac yet.", "Run: orca update");
   ctx.print(`Creating ${name}: ${tilde(ctx, folder)}, home in ${tilde(ctx, home)}`);
   if (newHome) await applyCreation(ctx, home, without);
-  const create = ["--name", container, "--label", `orca.project=${name}`, ...containerArgs({ name, folder, home, network, resources: effective(ctx, name) }), chosen?.ref ?? CURRENT_IMAGE];
+  const create = ["--name", container, "--label", label("project", name), ...containerArgs({ name, folder, home, network, resources: effective(ctx, name) }), chosen?.ref ?? CURRENT_IMAGE];
   if (opts.makeOnly) {
     await docker(ctx, ["create", ...create]);
     ctx.print(`Made ${container} from the image built ${built(latest)}; orca start opens it.`);

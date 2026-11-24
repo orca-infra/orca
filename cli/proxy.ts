@@ -5,7 +5,8 @@ import { readConfig } from "./config";
 import { OrcaError } from "./errors";
 import { projectsDir, tilde, type Context } from "./context";
 import { docker, probe } from "./docker";
-import { containerName, listContainers, readFolder, recordDir } from "./projects";
+import { listContainers, readFolder, recordDir } from "./projects";
+import { containerName, hostFor, label, LABELS, networkName, PROXY, PROXY_DATA, PROXY_IMAGE } from "./names";
 
 /**
  * Forwards: one Caddy container, orca-proxy, is the only thing published on the Mac
@@ -14,15 +15,8 @@ import { containerName, listContainers, readFolder, recordDir } from "./projects
  * routed to that project's container over the project's own network, which only the proxy
  * also joins. Orca starts the proxy while any project has forwards and removes it when none do.
  */
-export const PROXY = "orca-proxy";
-// caddy:2.11.7-alpine (released 2026-10-06), pinned by digest
-export const PROXY_IMAGE = "caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f";
-
-export const networkName = (project: string) => `orca-net-${project}`;
 export const proxyDir = (ctx: Context) => join(ctx.orcaDir, "proxy");
 
-export const hostFor = (port: number, project: string) =>
-  `${port}.${project.toLowerCase().replace(/[^a-z0-9-]/g, "-")}.localhost`;
 export const urlFor = (ctx: Context, port: number, project: string) =>
   `http://${hostFor(port, project)}:${readConfig(ctx).proxyPort}`;
 
@@ -90,8 +84,6 @@ export async function pointsHere(ctx: Context, host: string): Promise<boolean> {
   return (await ctx.lookup(host)).some((a) => a.startsWith("127.") || a === "::1");
 }
 
-/** Caddy's own certificate authority (it signs the HTTPS addresses' certificates) lives in this volume, so its key never leaves Docker */
-export const PROXY_DATA = "orca-proxy-data";
 const CA_IN_PROXY = "/data/caddy/pki/authorities/local/root.crt";
 
 /** The authority's certificate, copied out for the Mac to trust. */
@@ -116,12 +108,12 @@ export function projectAt(ctx: Context, dir: string): string | null {
 export async function ensureNetwork(ctx: Context, project: string): Promise<string> {
   const name = networkName(project);
   if ((await probe(ctx, ["network", "inspect", name])).code !== 0)
-    await docker(ctx, ["network", "create", "--label", `orca.network=${project}`, name]);
+    await docker(ctx, ["network", "create", "--label", label("network", project), name]);
   return name;
 }
 
 async function projectNetworks(ctx: Context): Promise<{ name: string; subnets: string[] }[]> {
-  const names = (await docker(ctx, ["network", "ls", "--filter", "label=orca.network", "--format", "{{.Name}}"])).split("\n").filter(Boolean);
+  const names = (await docker(ctx, ["network", "ls", "--filter", `label=${LABELS.network}`, "--format", "{{.Name}}"])).split("\n").filter(Boolean);
   if (names.length === 0) return [];
   const nets = JSON.parse(await docker(ctx, ["network", "inspect", ...names])) as { Name: string; IPAM: { Config: { Subnet?: string }[] | null } }[];
   return nets.map((n) => ({ name: n.Name, subnets: (n.IPAM.Config ?? []).flatMap((c) => (c.Subnet ? [c.Subnet] : [])) }));
@@ -177,7 +169,7 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
   writeFileSync(join(proxyDir(ctx), "Caddyfile"), config);
 
   // Published ports are fixed when a container is made, so a change means a new proxy
-  if (proxy && (proxy.labels["orca.port"] !== String(port) || proxy.labels["orca.ports"] !== ports.join(","))) {
+  if (proxy && (proxy.labels[LABELS.proxyPort] !== String(port) || proxy.labels[LABELS.proxyPorts] !== ports.join(","))) {
     await docker(ctx, ["rm", "-f", PROXY]);
     proxy = null;
   }
@@ -192,9 +184,9 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
     const r = await probe(ctx, [
       "run", "-d",
       "--name", PROXY,
-      "--label", "orca.proxy=true",
-      "--label", `orca.port=${port}`,
-      "--label", `orca.ports=${ports.join(",")}`,
+      "--label", label("proxy", "true"),
+      "--label", label("proxyPort", String(port)),
+      "--label", label("proxyPorts", ports.join(",")),
       "-p", `127.0.0.1:${port}:80`,
       ...ports.flatMap((p) => ["-p", `127.0.0.1:${p}:${p}`]),
       "-v", `${proxyDir(ctx)}:/etc/caddy:ro`,

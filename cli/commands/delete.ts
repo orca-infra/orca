@@ -4,7 +4,8 @@ import { OrcaError } from "../errors";
 import { tilde, type Context } from "../context";
 import { docker, probe } from "../docker";
 import { homeDir, listContainers, loadProjects, recordDir } from "../projects";
-import { allForwards, networkName, PROXY, syncProxy } from "../proxy";
+import { allForwards, syncProxy } from "../proxy";
+import { networkName, PROXY } from "../names";
 
 export type DeleteOptions = { home?: boolean; yes?: boolean };
 

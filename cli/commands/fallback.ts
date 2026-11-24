@@ -6,6 +6,7 @@ import { ensureImage } from "../images";
 import { attach, docker } from "../docker";
 import { homeDir, listContainers } from "../projects";
 import { projectAt } from "../proxy";
+import { fallbackName } from "../names";
 
 /** The kinds of plain container orca fallback runs */
 export const KINDS = {
@@ -48,7 +49,7 @@ export async function fallback(ctx: Context, path: string, opts: { kind?: string
 
   const { ref } = await ensureImage(ctx, opts.image ?? "current");
   // Kept when it exits, since the work is in it until pushed
-  const name = `orca-fallback-${project ?? basename(folder).replace(/[^a-zA-Z0-9_.-]/g, "-")}`;
+  const name = fallbackName(project ?? basename(folder).replace(/[^a-zA-Z0-9_.-]/g, "-"));
   if (kind === "no-folders" && (await listContainers(ctx)).some((c) => c.name === name)) {
     ctx.print(`Back into ${name}, as you left it. docker rm ${name} removes it once your work is pushed.`);
     if (!opts.command?.length) return attach(ctx, ["start", "-ai", name]);

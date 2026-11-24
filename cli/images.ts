@@ -1,8 +1,8 @@
 import { OrcaError } from "./errors";
 import { type Context } from "./context";
 import { attach, docker } from "./docker";
-import { CURRENT_IMAGE, inspectImage, PREVIOUS_IMAGE, type Image } from "./projects";
-import { REGISTRY_IMAGE, REMOTE_IMAGE } from "./release";
+import { inspectImage, type Image } from "./projects";
+import { CURRENT_IMAGE, PREVIOUS_IMAGE, REGISTRY_IMAGE, REMOTE_IMAGE } from "./names";
 
 /** A published image's tag: the day it was built and its commit */
 const DATED = /^\d{4}-\d{2}-\d{2}-[0-9a-f]{7,40}$/;

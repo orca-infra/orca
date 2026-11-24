@@ -2,8 +2,9 @@ import { existsSync, readdirSync } from "node:fs";
 import { readConfig } from "../config";
 import { OrcaError } from "../errors";
 import { projectsDir, tilde, type Context } from "../context";
-import { listContainers, containerName } from "../projects";
+import { listContainers } from "../projects";
 import { allForwards, caFile, innerPort, parseAddress, pointsHere, readForwards, syncProxy, trustCommand, urlFor, writeForwards, type Address, type Forward } from "../proxy";
+import { containerName } from "../names";
 
 /** `url` adds an address for the port being added; `remove` is a port (the whole forward) or one address. */
 export type ForwardOptions = { project: string; add?: number; url?: string; remove?: number | string };

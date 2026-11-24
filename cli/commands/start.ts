@@ -74,8 +74,22 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
     throw new OrcaError(`${other.name} is already running on this folder; both would edit the same files.`, `Exit it first, or: docker stop ${other.name}`);
 
   // The project's own network, which only the forwards proxy also joins
-  const network = await ensureNetwork(ctx, name);
-  if (existing && !opts.fresh && !existing.networks.includes(network)) await docker(ctx, ["network", "connect", network, container]);
+  const network = await skippable(
+    ctx,
+    async () => {
+      const n = await ensureNetwork(ctx, name);
+      if (existing && !opts.fresh && !existing.networks.includes(n)) await docker(ctx, ["network", "connect", n, container]);
+      return n;
+    },
+    {
+      failed: `${name}'s own network couldn't be set up`,
+      skipping:
+        existing && !opts.fresh
+          ? `Its forwards won't reach it until it is; the next orca start tries again.`
+          : `It would be created on Docker's default network, so forwards won't reach it until it's recreated: orca start --fresh.`,
+      question: `Start ${name} without it?`,
+    },
+  );
   if (allForwards(ctx).length)
     await skippable(ctx, () => syncProxy(ctx), {
       failed: "The forwards proxy couldn't be brought up to date",
@@ -97,7 +111,11 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
     await noticeOutdated(ctx, existing.image, folder, name);
     // Box settings changed since (orca settings, or new defaults) reach it without recreating it
     const resources = effective(ctx, name);
-    const old = await applySettings(ctx, existing, resources);
+    const old = await skippable(ctx, () => applySettings(ctx, existing, resources), {
+      failed: `Box settings (${describeResources(resources)}) couldn't be applied`,
+      skipping: `It would start with the memory and CPUs it has (${describeResources(existing)}); the next orca start tries again.`,
+      question: `Start ${name} with those?`,
+    });
     if (old) ctx.print(`Box settings: ${describeResources(resources)} (was ${describeResources(old)})`);
     if (opts.up && !canKeepUp(existing))
       throw new OrcaError(
@@ -134,12 +152,13 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
 }
 
 /**
- * Runs a step that starting can do without. If it fails, says what failed and what going on
- * without it means, and asks; with no one to ask, or a no, the failure stands.
+ * Runs a step that starting can do without, returning its result, or null when skipped. If it
+ * fails, says what failed and what going on without it means, and asks; with no one to ask, or
+ * a no, the failure stands.
  */
-async function skippable(ctx: Context, step: () => Promise<unknown>, say: { failed: string; skipping: string; question: string }) {
+async function skippable<T>(ctx: Context, step: () => Promise<T>, say: { failed: string; skipping: string; question: string }): Promise<T | null> {
   try {
-    await step();
+    return await step();
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
     const fix = e instanceof OrcaError && e.fix ? `\n  ${e.fix}` : "";
@@ -148,6 +167,7 @@ async function skippable(ctx: Context, step: () => Promise<unknown>, say: { fail
     ctx.print(`  ${say.skipping}`);
     if (!/^(y(es)?)?$/i.test((await ctx.ask(`${say.question} [Y/n] `)).trim())) throw e;
     ctx.print();
+    return null;
   }
 }
 

@@ -353,3 +353,29 @@ test("with no one to ask, a failing proxy stops the start with its error", async
   const t = proxyBroken();
   await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ fix: expect.stringContaining("Restart Docker Desktop") });
 });
+
+test("a project network that can't be made is skipped on a yes: a new container goes on Docker's default network", async () => {
+  const t = fakeContext({ failing: ["network create"] }, [""]);
+  await start(t.ctx, folder(t.home), {});
+  expect(t.output()).toContain("app's own network couldn't be set up: docker network failed");
+  expect(t.output()).toContain("orca start --fresh");
+  const run = t.calls.find((c) => c[0] === "run")!;
+  expect(run).not.toContain("--network");
+  expect(t.attached).toHaveLength(1);
+});
+
+test("a project network that can't be made stops the start with no one to ask", async () => {
+  const t = fakeContext({ failing: ["network create"] });
+  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ message: expect.stringContaining("docker network failed") });
+  expect(t.calls.some((c) => c[0] === "run")).toBe(false);
+});
+
+test("box settings that can't be applied are skipped on a yes, saying what it starts with", async () => {
+  const t = fakeContext({ failing: ["update"] }, [""]);
+  const dir = folder(t.home);
+  t.state.containers.push({ name: "orca-app", running: true, labels: TU, workspace: dir, home: homeOf(t), memory: 4 * 1024 ** 3, cpus: 2 });
+  await start(t.ctx, dir, { new: true });
+  expect(t.output()).toContain("couldn't be applied");
+  expect(t.output()).toContain("the memory and CPUs it has (4 GB of memory, 2 CPUs)");
+  expect(t.attached).toHaveLength(1);
+});

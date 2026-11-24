@@ -8,7 +8,8 @@ import { join } from "node:path";
 import { OrcaError, type Context } from "./context";
 import { resourceArgs, type Resources } from "./box-settings";
 
-export type Box = { name: string; folder: string; home: string; network: string; resources: Resources };
+/** `network` is null when the project's own couldn't be set up: Docker's default then */
+export type Box = { name: string; folder: string; home: string; network: string | null; resources: Resources };
 
 /** docker run arguments for every container orca creates (the every-time features). */
 export function containerArgs(b: Box): string[] {
@@ -17,7 +18,7 @@ export function containerArgs(b: Box): string[] {
     "-v", `${b.folder}:/workspace`,
     "-v", `${b.home}:/home/node`,
     // Its own network, which only the forwards proxy also joins
-    "--network", b.network,
+    ...(b.network ? ["--network", b.network] : []),
     // Its memory and CPUs (box settings): 8 GB and 4 unless set
     ...resourceArgs(b.resources),
     // Where `orca up` marks it to keep running; emptied on every start, so a stop ends it

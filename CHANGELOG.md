@@ -5,7 +5,7 @@ What people using Orca should know, newest first: anything they have to do (mark
 ## 2026-11-20
 
 - When Docker Desktop's file sharing stops working, a container loses its folders from the Mac (`/workspace` and `~`), so logins, `claude` and everything else in it seem to vanish. `orca start` now says that's what happened, and that restarting Docker Desktop is the fix (your files on the Mac are untouched), instead of listing Docker's error as a terminal.
-- When the forwards proxy can't be brought up to date, `orca start` says why, and asks whether to start the project without it, instead of failing.
+- When a step `orca start` can do without fails (the forwards proxy, the project's own network, applying box settings), it says what failed and what going on without it means, and asks whether to start anyway, instead of failing.
 - FALLBACKS.md: how to work in a project with plain `docker` commands when orca doesn't work.
 - `orca start --fresh` and `orca delete` no longer remove the `node_modules` volume that containers made before 2026-10-22 had. Once those containers are recreated, remove any such volumes yourself: `docker volume ls`, then `docker volume rm <name>`.
 

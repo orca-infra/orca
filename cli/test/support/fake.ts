@@ -41,6 +41,8 @@ export type FakeState = {
   /** what `docker pull` makes orca:latest's remote tag point at */
   pulled?: string;
   failPull?: boolean;
+  /** docker commands that fail, by their first arguments, e.g. "network create" or "update" */
+  failing?: string[];
   /** Mac ports something else is listening on, so publishing them fails */
   taken?: number[];
   /** What Docker has in all (docker info); 16 GB and 10 CPUs unless set */
@@ -93,6 +95,7 @@ export function fakeDocker(state: FakeState) {
 
   const docker: Docker = {
     async run(args) {
+      if (state.failing?.some((f) => args.join(" ").startsWith(f))) return fail(`fake docker: ${args.slice(0, 2).join(" ")} failed`);
       calls.push(args);
       const [cmd, ...rest] = args;
       if (cmd === "version") return ok("27.0.0");

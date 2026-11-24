@@ -25,8 +25,6 @@ test("a new folder gets a record, and a container in the background with its fol
   expect(run.slice(0, 4)).toEqual(["run", "-d", "--name", "orca-app"]);
   expect(run).toContain("orca.project=app");
   expect(run).toContain(`${dir}:/workspace`);
-  // node_modules is the project folder's own, like everything else in it
-  expect(run.some((a) => a.includes("node_modules"))).toBe(false);
   expect(run).toContain(`${join(record, "home")}:/home/node`);
   expect(run).toContain("ORCA_PROJECT=app");
   // The image's own main process keeps it running while terminals are open
@@ -149,7 +147,7 @@ test("an out-of-date container says what recreating keeps and loses, then opens 
   t.state.containers.push({ name: "orca-app", image: "sha256:old", labels: T, workspace: dir, home: homeOf(t) });
   await start(t.ctx, dir, {});
   const out = t.output();
-  expect(out).toContain("Image update available");
+  expect(out).toContain("Not on the current image");
   expect(out).toContain("2026-09-02");
   expect(out).toContain("orca stop app, then orca start --fresh");
   expect(out).toMatch(/Kept:.*~/);
@@ -162,7 +160,7 @@ test("the update notice leaves out build dates that can't tell the images apart"
   const dir = folder(t.home);
   t.state.containers.push({ name: "orca-app", image: "sha256:old", labels: T, workspace: dir, home: homeOf(t) });
   await start(t.ctx, dir, {});
-  expect(t.output()).toContain("made from an older orca image");
+  expect(t.output()).toContain("made from another orca image");
   expect(t.output()).not.toContain("22:08");
 });
 
@@ -173,16 +171,6 @@ test("--fresh recreates a stopped container", async () => {
   await start(t.ctx, dir, { fresh: true });
   expect(t.calls).toContainEqual(["rm", "orca-app"]);
   expect(t.calls.filter((c) => c[0] === "run")).toHaveLength(1);
-  expect(t.output()).not.toContain("install dependencies again");
-});
-
-test("--fresh on a container from before node_modules moved removes its old volume", async () => {
-  const t = fakeContext({ volumes: ["orca-app_node_modules"] });
-  const dir = folder(t.home);
-  t.state.containers.push({ name: "orca-app", workspace: dir, home: join(t.ctx.orcaDir, "projects/app/home") });
-  await start(t.ctx, dir, { fresh: true });
-  expect(t.state.volumes).toHaveLength(0);
-  expect(t.output()).toContain("install dependencies again");
 });
 
 test("--fresh refuses while the container is running, saying what stopping it ends", async () => {
@@ -294,18 +282,6 @@ test("up creates a new project's container, with somewhere to mark it, and no te
   expect(t.state.containers[0].up).toBe(true);
 });
 
-test("up refuses a container or image from before orca up, saying how to get it", async () => {
-  const t = fakeContext();
-  const dir = folder(t.home);
-  t.state.containers.push({ name: "orca-app", labels: T, workspace: dir, home: homeOf(t) });
-  await expect(start(t.ctx, dir, { up: true })).rejects.toMatchObject({
-    message: expect.stringContaining("from an image before orca up"),
-    fix: expect.stringContaining("orca start --fresh ~/dev/app"),
-  });
-  const n = fakeContext({ noUp: ["sha256:new"] });
-  await expect(start(n.ctx, folder(n.home), { up: true })).rejects.toMatchObject({ fix: "Run: orca update" });
-});
-
 test("exiting the last terminal stops the container, saying so and how to keep it running", async () => {
   const t = fakeContext();
   const dir = folder(t.home);
@@ -324,4 +300,124 @@ test("leaving a terminal says nothing about stopping while it's kept up or other
     expect(t.output()).not.toContain("stopping");
     expect(t.state.containers[0].running).toBe(true);
   }
+});
+
+test("a container Docker can't run a command in isn't opened: it says it isn't ready, with Docker's message, and what to do", async () => {
+  const t = fakeContext();
+  const dir = folder(t.home);
+  t.state.containers.push({ name: "orca-app", running: true, labels: TU, workspace: dir, home: homeOf(t), terminals: [term("1")], refusesExec: true });
+  await expect(start(t.ctx, dir, {})).rejects.toMatchObject({
+    message: expect.stringContaining("orca-app isn't ready: Docker couldn't run a command in it (OCI runtime exec failed"),
+    fix: "Try: orca stop app, then orca start again. If it still isn't ready, restart Docker Desktop. To work meanwhile: orca fallback",
+  });
+  expect(t.attached).toHaveLength(0);
+});
+
+test("a container without a folder orca mounts in it isn't opened, saying which and where it's from", async () => {
+  const t = fakeContext();
+  const dir = folder(t.home);
+  t.state.containers.push({ name: "orca-app", running: true, labels: TU, workspace: dir, home: homeOf(t), missing: ["/home/node"] });
+  await expect(start(t.ctx, dir, {})).rejects.toMatchObject({
+    message: expect.stringContaining("orca-app isn't ready: /home/node (~/.orca/projects/app/home on this Mac) isn't there inside it"),
+  });
+  expect(t.attached).toHaveLength(0);
+});
+
+function proxyBroken(answers: string[] = []) {
+  const t = fakeContext({}, answers);
+  const record = join(t.ctx.orcaDir, "projects/web");
+  mkdirSync(join(record, "home"), { recursive: true });
+  writeFileSync(join(record, "project-path"), folder(t.home, "web") + "\n");
+  writeFileSync(join(record, "forwards"), "3000\n");
+  t.state.containers.push({ name: "orca-proxy", running: true, labels: { "orca.proxy": "true", "orca.port": "7320", "orca.ports": "" }, networks: [], refusesExec: true });
+  return t;
+}
+
+test("a forwards proxy that fails says what failed and what skipping it means, and starts on a yes", async () => {
+  const t = proxyBroken([""]);
+  await start(t.ctx, folder(t.home), {});
+  expect(t.output()).toContain("The forwards proxy couldn't be brought up to date: docker exec failed: OCI runtime exec failed");
+  expect(t.output()).toContain("app itself is unaffected");
+  expect(t.attached).toHaveLength(1);
+});
+
+test("a no to starting without the proxy stops with its error", async () => {
+  const t = proxyBroken(["n"]);
+  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ message: expect.stringContaining("docker exec failed") });
+  expect(t.attached).toHaveLength(0);
+});
+
+test("with no one to ask, a failing proxy stops the start with its error", async () => {
+  const t = proxyBroken();
+  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ message: expect.stringContaining("docker exec failed") });
+});
+
+test("a project network that can't be made is skipped on a yes: a new container goes on Docker's default network", async () => {
+  const t = fakeContext({ failing: ["network create"] }, [""]);
+  await start(t.ctx, folder(t.home), {});
+  expect(t.output()).toContain("app's own network couldn't be set up: docker network failed");
+  expect(t.output()).toContain("the next orca start tries again");
+  const run = t.calls.find((c) => c[0] === "run")!;
+  expect(run).not.toContain("--network");
+  expect(t.attached).toHaveLength(1);
+});
+
+test("a project network that can't be made stops the start with no one to ask", async () => {
+  const t = fakeContext({ failing: ["network create"] });
+  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ message: expect.stringContaining("docker network failed") });
+  expect(t.calls.some((c) => c[0] === "run")).toBe(false);
+});
+
+test("box settings that can't be applied are skipped on a yes, saying what it starts with", async () => {
+  const t = fakeContext({ failing: ["update"] }, [""]);
+  const dir = folder(t.home);
+  t.state.containers.push({ name: "orca-app", running: true, labels: TU, workspace: dir, home: homeOf(t), memory: 4 * 1024 ** 3, cpus: 2 });
+  await start(t.ctx, dir, { new: true });
+  expect(t.output()).toContain("couldn't be applied");
+  expect(t.output()).toContain("the memory and CPUs it has (4 GB of memory, 2 CPUs)");
+  expect(t.attached).toHaveLength(1);
+});
+
+test("--image makes a new container from that image, downloading a published one first", async () => {
+  const t = fakeContext({ published: { "2026-11-20-abc1234": "sha256:old" } });
+  await start(t.ctx, folder(t.home), { image: "2026-11-20-abc1234" });
+  expect(t.attached[0]).toEqual(["pull", "ghcr.io/orca-infra/orca:2026-11-20-abc1234"]);
+  expect(t.state.containers[0].image).toBe("sha256:old");
+  // The current image stays as it was
+  expect(t.state.latest).toBe("sha256:new");
+});
+
+test("--image previous with none kept says so, and makes nothing", async () => {
+  const t = fakeContext();
+  await expect(start(t.ctx, folder(t.home), { image: "previous" })).rejects.toMatchObject({ message: expect.stringContaining("no previous image") });
+  expect(t.state.containers).toHaveLength(0);
+});
+
+test("--image on an existing container says it applies when one is made, and how to remake it", async () => {
+  const t = fakeContext();
+  const dir = folder(t.home);
+  t.state.containers.push({ name: "orca-app", running: true, labels: TU, workspace: dir, home: homeOf(t), image: "sha256:new" });
+  await expect(start(t.ctx, dir, { image: "previous" })).rejects.toMatchObject({
+    message: expect.stringContaining("--image applies when a container is made"),
+    fix: "To remake it from that image (keeps the folder and the home): orca stop app, then orca start --fresh --image previous ~/dev/app",
+  });
+});
+
+test("--fresh --image remakes a container from that image, keeping the home", async () => {
+  const t = fakeContext({ tags: { "orca:previous": "sha256:old" } });
+  const dir = folder(t.home);
+  mkdirSync(homeOf(t), { recursive: true });
+  writeFileSync(join(homeOf(t), ".bashrc"), "");
+  t.state.containers.push({ name: "orca-app", labels: TU, workspace: dir, home: homeOf(t), image: "sha256:new" });
+  await start(t.ctx, dir, { fresh: true, image: "previous" });
+  expect(t.state.containers.find((c) => c.name === "orca-app")!.image).toBe("sha256:old");
+  expect(existsSync(join(homeOf(t), ".bashrc"))).toBe(true);
+});
+
+test("makeOnly makes the container stopped, without a terminal", async () => {
+  const t = fakeContext();
+  await start(t.ctx, folder(t.home), { makeOnly: true });
+  expect(t.calls.some((c) => c[0] === "create")).toBe(true);
+  expect(t.state.containers[0].running).toBe(false);
+  expect(t.attached).toHaveLength(0);
 });

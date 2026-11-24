@@ -79,10 +79,10 @@ function ImageUpdate({ p }: { p: ProjectDetail }) {
   const running = p.state === "running";
   return (
     <div className="mt-6 rounded-md border border-warning/50 px-4 py-3 text-sm">
-      <p className="font-medium text-warning">Image update available</p>
+      <p className="font-medium text-warning">Not on the current image</p>
       <p className="mt-1 text-pretty">
-        {used && newest && used !== newest ? `This container's image was built ${used}; the newest, ${newest}.` : "This container was made from an older orca image."} Recreating it
-        switches to the new one.
+        {used && newest && used !== newest ? `This container's image was built ${used}; the current one, ${newest}.` : "This container was made from another orca image."} Recreating it
+        switches to the current one.
       </p>
       <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 text-muted-foreground">
         <dt>Kept</dt>
@@ -110,14 +110,14 @@ function Terminals({ p }: { p: ProjectDetail }) {
   const terminals = p.terminals ?? [];
   const stopNow = () => stop.mutate(p.name, { onSuccess: (r) => (notify.done(r), setConfirming(false)), onError: notify.failed });
   // What decides when it stops, so it never stops (or keeps running) unexpectedly
-  const rule = !running || p.terminals === null ? null : p.keptUp ? "Kept up: it runs until you stop it, with or without terminals." : p.canKeepUp ? "It stops when its last terminal ends." : "It stops a minute after its last terminal ends.";
+  const rule = !running || p.terminals === null ? null : p.keptUp ? "Kept up: it runs until you stop it, with or without terminals." : "It stops when its last terminal ends.";
 
   return (
     <Section
       title="Terminals"
       aside={
         <div className="flex gap-2">
-          {p.canKeepUp && p.terminals !== null && !p.keptUp && (
+          {p.terminals !== null && !p.keptUp && (
             <Button size="sm" variant="outline" disabled={up.isPending} onClick={() => up.mutate(p.name, { onSuccess: notify.done, onError: notify.failed })}>
               {running ? "Keep running" : "Start without a terminal"}
             </Button>

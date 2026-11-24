@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { beforeHomes, labelGeneration } from "./compat";
 import { OrcaError, projectsDir, type Context } from "./context";
 import { parseContainer, type Container } from "./docker";
 
@@ -28,7 +29,6 @@ export type Project = {
 export const recordDir = (ctx: Context, name: string) => join(projectsDir(ctx), name);
 export const homeDir = (ctx: Context, name: string) => join(recordDir(ctx, name), "home");
 export const containerName = (name: string) => `orca-${name}`;
-export const volumeName = (container: string) => `${container}_node_modules`;
 
 export function readFolder(ctx: Context, name: string): string | null {
   const file = join(recordDir(ctx, name), "project-path");
@@ -47,7 +47,7 @@ export async function loadProjects(ctx: Context): Promise<Project[]> {
     const folder = readFolder(ctx, name);
     const home = homeDir(ctx, name);
     const container = containers.find((c) => c.home === home) ?? null;
-    const old = containers.find((c) => !c.home && c.workspace !== null && c.workspace === folder) ?? null;
+    const old = containers.find((c) => beforeHomes(c) && c.workspace !== null && c.workspace === folder) ?? null;
     const legacy = old && !container && !migrated(ctx, name) ? old : null;
     return {
       name,
@@ -63,7 +63,7 @@ export async function loadProjects(ctx: Context): Promise<Project[]> {
   // recently used). Named after the folder, or the container when that name is taken, since
   // names identify projects everywhere.
   const unrecorded = containers
-    .filter((c) => !c.home && c.workspace)
+    .filter((c) => beforeHomes(c) && c.workspace)
     .sort((a, b) => b.startedAt - a.startedAt);
   for (const c of unrecorded) {
     if (projects.some((p) => p.folder === c.workspace)) continue;
@@ -88,11 +88,16 @@ export async function listContainers(ctx: Context): Promise<Container[]> {
   return (JSON.parse(await docker(ctx, ["inspect", ...list])) as Parameters<typeof parseContainer>[0][]).map(parseContainer);
 }
 
-/** `terminals`, `up`: made from a Dockerfile with orca's terminals, and with orca up (its labels) */
-export type Image = { id: string; created: string; terminals: boolean; up: boolean };
+/** `generation`: which orca made it (compat.ts) */
+export type Image = { id: string; created: string; generation: number };
+
+/** The current image, which new containers are made from (orca image use changes it) */
+export const CURRENT_IMAGE = "orca:latest";
+/** The one the last change of the current image replaced */
+export const PREVIOUS_IMAGE = "orca:previous";
 
 export async function latestImage(ctx: Context): Promise<Image | null> {
-  return inspectImage(ctx, "orca:latest");
+  return inspectImage(ctx, CURRENT_IMAGE);
 }
 
 export async function inspectImage(ctx: Context, ref: string): Promise<Image | null> {
@@ -100,7 +105,7 @@ export async function inspectImage(ctx: Context, ref: string): Promise<Image | n
   if (r.code !== 0) return null;
   const [img] = JSON.parse(r.stdout) as { Id: string; Created: string; Config?: { Labels?: Record<string, string> | null } }[];
   const labels = img.Config?.Labels ?? {};
-  return { id: img.Id, created: img.Created, terminals: labels["orca.terminals"] === "1", up: labels["orca.up"] === "1" };
+  return { id: img.Id, created: img.Created, generation: labelGeneration(labels) };
 }
 
 /** Runs a docker command that must succeed, turning the common failures into fixes. */
@@ -110,5 +115,6 @@ export async function docker(ctx: Context, args: string[]): Promise<string> {
   if (r.code === 127) throw new OrcaError("Docker isn't installed.", "Install Docker Desktop: https://docs.docker.com/desktop/");
   if (/Cannot connect to the Docker daemon|Is the docker daemon running/i.test(r.stderr))
     throw new OrcaError("Docker isn't running.", "Start Docker Desktop, then try again.");
-  throw new OrcaError(`docker ${args[0]} failed: ${r.stderr.trim() || `exit ${r.code}`}`);
+  // Docker says why on stderr, or for some failures (an exec it couldn't start) on stdout
+  throw new OrcaError(`docker ${args[0]} failed: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`}`);
 }

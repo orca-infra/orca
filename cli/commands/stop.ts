@@ -1,6 +1,7 @@
 import { OrcaError, type Context } from "../context";
 import { docker, loadProjects } from "../projects";
-import { describe, hasTerminals, listTerminals } from "../terminals";
+import { hasTerminals } from "../compat";
+import { describe, listTerminals } from "../terminals";
 
 /** Stops a project's container, after saying which terminals that ends; whether it's stopped now. */
 export async function stop(ctx: Context, name: string, opts: { yes?: boolean }): Promise<boolean> {

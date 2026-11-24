@@ -134,9 +134,9 @@ COPY image/tmux.conf /etc/tmux.conf
 # a stock ~/.bashrc then loads it again, which costs a few milliseconds and nothing else
 RUN echo '. /etc/profile.d/bash_completion.sh' >> /etc/bash.bashrc
 COPY --chmod=755 image/keepalive.sh /usr/local/bin/orca-keepalive
-# Tells orca this image has terminals (containers made from older images open plain shells),
-# and can be kept up (older ones run a minute past their last terminal or other shell)
-LABEL orca.terminals="1" orca.up="1"
+# Which orca generation this image is (cli/compat.ts), for telling it apart from older ones.
+# orca.terminals and orca.up are what older orca commands read; this one reads orca.generation
+LABEL orca.terminals="1" orca.up="1" orca.generation="2"
 
 USER $USERNAME
 WORKDIR /workspace

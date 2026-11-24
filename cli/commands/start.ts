@@ -4,6 +4,7 @@ import { OrcaError, projectsDir, tilde, type Context } from "../context";
 import {
   containerName,
   docker,
+  CURRENT_IMAGE,
   homeDir,
   inspectImage,
   latestImage,
@@ -11,13 +12,14 @@ import {
   migrated,
   readFolder,
   recordDir,
-  volumeName,
 } from "../projects";
 import { readConfig } from "../config";
-import { applyCreation, checkWithout, containerArgs, workspaceFile } from "../features";
+import { built, ensureImage } from "../images";
+import { applyCreation, checkWithout, containerArgs, mounts, workspaceFile } from "../features";
 import { applySettings, describeResources, effective } from "../box-settings";
-import { allForwards, ensureNetwork, syncProxy } from "../proxy";
-import { activity, canKeepUp, describe, hasTerminals, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
+import { allForwards, ensureNetwork, PROXY, syncProxy } from "../proxy";
+import { beforeHomes, checkSupported, hasTerminals, TERMINALS } from "../compat";
+import { activity, checkReady, describe, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
 
 export type StartOptions = {
   fresh?: boolean;
@@ -31,6 +33,10 @@ export type StartOptions = {
   without?: string[];
   /** Start it without a terminal, to keep running until it's stopped (orca up) */
   up?: boolean;
+  /** The image to make its container from, when this makes one (image names as in orca image use) */
+  image?: string;
+  /** Only (re)make its container, stopped, without starting it or opening a terminal */
+  makeOnly?: boolean;
 };
 
 /** Starts (or enters) the container for the project folder at `path`; with `up`, keeps it running instead. */
@@ -52,13 +58,22 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   const home = homeDir(ctx, name);
   const containers = await listContainers(ctx);
   const existing = containers.find((c) => c.name === container) ?? null;
+  if (opts.image && existing && !opts.fresh) {
+    const on = await inspectImage(ctx, existing.image);
+    throw new OrcaError(
+      `${container} already exists, made from the image built ${built(on)}; --image applies when a container is made.`,
+      `To remake it from that image (keeps the folder and the home): ${existing.running ? `orca stop ${name}, then ` : ""}orca start --fresh --image ${opts.image} ${tilde(ctx, folder)}`,
+    );
+  }
+  // Downloaded now, before anything is removed, so a missing image changes nothing
+  const chosen = opts.image ? await ensureImage(ctx, opts.image) : null;
 
   // A home created now gets the creation features; an existing one is never changed
   const newHome = isEmpty(home);
   claimRecord(ctx, name, folder);
   workspaceFile(ctx, name, folder, without);
 
-  const legacy = containers.find((c) => !c.home && c.workspace === folder);
+  const legacy = containers.find((c) => beforeHomes(c) && c.workspace === folder);
   if (legacy && !existing && !migrated(ctx, name))
     throw new OrcaError(
       isEmpty(home)
@@ -74,9 +89,25 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
     throw new OrcaError(`${other.name} is already running on this folder; both would edit the same files.`, `Exit it first, or: docker stop ${other.name}`);
 
   // The project's own network, which only the forwards proxy also joins
-  const network = await ensureNetwork(ctx, name);
-  if (existing && !opts.fresh && !existing.networks.includes(network)) await docker(ctx, ["network", "connect", network, container]);
-  if (allForwards(ctx).length) await syncProxy(ctx);
+  const network = await skippable(
+    ctx,
+    async () => {
+      const n = await ensureNetwork(ctx, name);
+      if (existing && !opts.fresh && !existing.networks.includes(n)) await docker(ctx, ["network", "connect", n, container]);
+      return n;
+    },
+    {
+      failed: `${name}'s own network couldn't be set up`,
+      skipping: `Its forwards won't reach it until it's on it; the next orca start tries again.`,
+      question: `Start ${name} without it?`,
+    },
+  );
+  if (allForwards(ctx).length)
+    await skippable(ctx, () => syncProxy(ctx), {
+      failed: "The forwards proxy couldn't be brought up to date",
+      skipping: `Every project's forwards may not work until it is; ${name} itself is unaffected. To start the proxy afresh: docker rm -f ${PROXY}`,
+      question: `Start ${name} without it?`,
+    });
 
   if (existing && opts.fresh) {
     if (existing.running) {
@@ -88,36 +119,37 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
     }
     ctx.print(`Removing ${container} to recreate it (--fresh)`);
     await docker(ctx, ["rm", container]);
-    // Containers made before node_modules moved into the project folder had a volume for it
-    if ((await ctx.docker.run(["volume", "rm", volumeName(container)])).code === 0)
-      ctx.print("  Its node_modules is now the project folder's: install dependencies again if they're missing.");
   } else if (existing) {
+    checkSupported(ctx, existing, `orca stop ${name}, then orca start --fresh ${tilde(ctx, folder)}`);
     await noticeOutdated(ctx, existing.image, folder, name);
     // Box settings changed since (orca settings, or new defaults) reach it without recreating it
     const resources = effective(ctx, name);
-    const old = await applySettings(ctx, existing, resources);
+    const old = await skippable(ctx, () => applySettings(ctx, existing, resources), {
+      failed: `Box settings (${describeResources(resources)}) couldn't be applied`,
+      skipping: `It would start with the memory and CPUs it has (${describeResources(existing)}); the next orca start tries again.`,
+      question: `Start ${name} with those?`,
+    });
     if (old) ctx.print(`Box settings: ${describeResources(resources)} (was ${describeResources(old)})`);
-    if (opts.up && !canKeepUp(existing))
-      throw new OrcaError(
-        `${container} is from an image before orca up, so it can't be kept running without terminals.`,
-        `Recreate it on the newest image: orca update, then orca start --fresh ${tilde(ctx, folder)}`,
-      );
     if (!hasTerminals(existing)) return plainShell(ctx, name, container, existing.running, opts);
     if (!existing.running) {
       ctx.print(`Starting ${name}`);
       await docker(ctx, ["start", container]);
     }
-    const box = { name, container, folder, keepsUp: canKeepUp(existing) };
+    const box = { name, container, folder };
     return opts.up ? up(ctx, box) : openTerminal(ctx, box, opts);
   }
 
-  const latest = await latestImage(ctx);
+  const latest = chosen?.image ?? (await latestImage(ctx));
   if (!latest) throw new OrcaError("The orca image isn't on this Mac yet.", "Run: orca update");
-  if (opts.up && !latest.up) throw new OrcaError("The orca image is from before orca up.", "Run: orca update");
   ctx.print(`Creating ${name}: ${tilde(ctx, folder)}, home in ${tilde(ctx, home)}`);
   if (newHome) await applyCreation(ctx, home, without);
-  const create = ["--name", container, "--label", `orca.project=${name}`, ...containerArgs({ name, folder, home, network, resources: effective(ctx, name) }), "orca:latest"];
-  if (!latest.terminals) {
+  const create = ["--name", container, "--label", `orca.project=${name}`, ...containerArgs({ name, folder, home, network, resources: effective(ctx, name) }), chosen?.ref ?? CURRENT_IMAGE];
+  if (opts.makeOnly) {
+    await docker(ctx, ["create", ...create]);
+    ctx.print(`Made ${container} from the image built ${built(latest)}; orca start opens it.`);
+    return 0;
+  }
+  if (latest.generation < TERMINALS) {
     // An image from before terminals: its main process is the first window's shell
     ctx.print("This image has no terminals yet; for them: orca update, then orca start --fresh");
     if (!opts.command) return ctx.docker.attach(["run", "-it", ...create, "bash"]);
@@ -127,22 +159,44 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   // The container runs in the background while any terminal is open, or until it's stopped
   // if kept up (the image's orca-keepalive)
   await docker(ctx, ["run", "-d", ...create]);
-  const box = { name, container, folder, keepsUp: latest.up };
+  const box = { name, container, folder };
   return opts.up ? up(ctx, box) : openTerminal(ctx, box, opts);
 }
 
-type Started = { name: string; container: string; folder: string; keepsUp: boolean };
+/**
+ * Runs a step that starting can do without, returning its result, or null when skipped. If it
+ * fails, says what failed and what going on without it means, and asks; with no one to ask, or
+ * a no, the failure stands.
+ */
+async function skippable<T>(ctx: Context, step: () => Promise<T>, say: { failed: string; skipping: string; question: string }): Promise<T | null> {
+  try {
+    return await step();
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    const fix = e instanceof OrcaError && e.fix ? `\n  ${e.fix}` : "";
+    if (!ctx.ask) throw e;
+    ctx.print(`${say.failed}: ${detail}${fix}`);
+    ctx.print(`  ${say.skipping}`);
+    if (!/^(y(es)?)?$/i.test((await ctx.ask(`${say.question} [Y/n] `)).trim())) throw e;
+    ctx.print();
+    return null;
+  }
+}
+
+type Started = { name: string; container: string; folder: string };
 
 /** Marks a started container to keep running, terminals or not, until it's stopped. */
 async function up(ctx: Context, { name, container, folder }: Started): Promise<number> {
+  await checkReady(ctx, name, container, mounts({ folder, home: homeDir(ctx, name) }));
   if (!(await keepUp(ctx, container)))
-    throw new OrcaError(`${container} has nowhere to mark it kept up: an older orca made it.`, `Recreate it: orca stop ${name}, then orca start --fresh ${tilde(ctx, folder)}`);
+    throw new OrcaError(`${container} couldn't be marked to keep running.`, `Recreate it (keeps the folder and the home): orca stop ${name}, then orca start --fresh ${tilde(ctx, folder)}`);
   ctx.print(`${name} is up: it keeps running, with or without terminals, until orca stop ${name}.`);
   return 0;
 }
 
 /** Attaches this window to a terminal: the one asked for, a new one, or one the user picks. */
-async function openTerminal(ctx: Context, { name, container, folder, keepsUp }: Started, opts: StartOptions): Promise<number> {
+async function openTerminal(ctx: Context, { name, container, folder }: Started, opts: StartOptions): Promise<number> {
+  await checkReady(ctx, name, container, mounts({ folder, home: homeDir(ctx, name) }));
   const open = await listTerminals(ctx, container);
   let pick = opts.terminal ?? null;
   if (!pick && !opts.new && !opts.command && open.length && ctx.choose) {
@@ -159,12 +213,10 @@ async function openTerminal(ctx: Context, { name, container, folder, keepsUp }: 
   const code = await ctx.docker.attach(terminalArgs(container, terminal, opts.command));
   // Stopped here, where the last terminal ended, and said so, rather than unseen (a terminal
   // that ends with no window on it is the keepalive's to notice)
-  if (keepsUp) {
-    const now = await activity(ctx, container);
-    if (!now.up && now.terminals.length === 0) {
-      ctx.print(`That was ${name}'s last terminal, so it's stopping. To keep it running without terminals: orca up ${tilde(ctx, folder)}`);
-      await ctx.docker.run(["stop", container]);
-    }
+  const now = await activity(ctx, container);
+  if (!now.up && now.terminals.length === 0) {
+    ctx.print(`That was ${name}'s last terminal, so it's stopping. To keep it running without terminals: orca up ${tilde(ctx, folder)}`);
+    await ctx.docker.run(["stop", container]);
   }
   return code;
 }
@@ -219,8 +271,8 @@ async function noticeOutdated(ctx: Context, used: string, folder: string, name: 
   // Dates only help when they tell the two images apart
   ctx.print(
     usedBuilt && newestBuilt && usedBuilt !== newestBuilt
-      ? `Image update available: this container's image was built ${usedBuilt}, the newest ${newestBuilt}.`
-      : "Image update available: this container was made from an older orca image.",
+      ? `Not on the current image: this container's image was built ${usedBuilt}, the current one ${newestBuilt}.`
+      : "Not on the current image: this container was made from another orca image.",
   );
   ctx.print(`  To switch:  orca stop ${name}, then orca start --fresh ${tilde(ctx, folder)}`);
   for (const line of RECREATING) ctx.print(`  ${line}`);

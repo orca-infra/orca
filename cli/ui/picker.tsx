@@ -64,7 +64,7 @@ export function Picker({
       )}
       <Text dimColor>
         {projects.length
-          ? `↑↓ move · enter start${projects[selected].outdated ? " · u update image" : ""} · n new · d delete · q quit`
+          ? `↑↓ move · enter start${projects[selected].outdated ? " · u switch to current image" : ""} · n new · d delete · q quit`
           : "n new · q quit"}
       </Text>
     </Box>

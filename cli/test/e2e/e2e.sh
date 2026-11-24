@@ -8,7 +8,7 @@
 set -euo pipefail
 ORCA="$(realpath "$1")"
 shift
-SECTIONS=("${@:-projects terminals update forwards dashboard}")
+SECTIONS=("${@:-projects terminals update forwards dashboard fallbacks}")
 read -ra SECTIONS <<<"${SECTIONS[*]}"
 
 fail() { echo "✗ $*" >&2; exit 1; }
@@ -53,7 +53,6 @@ projects() {
   [ "$(mount_of orca-demo /workspace)" = "$T/dev/demo" ] || fail "workspace mount"
   [ "$(mount_of orca-demo /home/node)" = "$ORCA_DIR/projects/demo/home" ] || fail "home mount"
   [ "$(docker inspect -f '{{index .Config.Labels "orca.project"}}' orca-demo)" = demo ] || fail "label"
-  [ "$(mount_of orca-demo /workspace/node_modules)" = "" ] || fail "node_modules is part of the project folder"
   grep -q '"path": "api"' dev/demo/demo.code-workspace || fail "the workspace file should have the api repo"
 
   step "list --json agrees with Docker (what the unit tests' fake Docker assumes)"
@@ -138,7 +137,18 @@ update() {
 LABEL orca.e2e=newer" >/dev/null
   in_tty start "$T/dev/demo" | tee out.txt
   docker tag "$real" orca:latest
-  grep -q "Image update available" out.txt || fail "should notice the newer image"
+  grep -q "Not on the current image" out.txt || fail "should notice it isn't on the current image"
+
+  step "image use previous goes back, and the image it replaces is kept"
+  docker build -q -t orca:latest - <<<"FROM orca:latest
+LABEL orca.e2e=newer" >/dev/null
+  newer=$(docker image inspect -f '{{.Id}}' orca:latest)
+  "$ORCA" image use "$real" </dev/null | tee out.txt
+  [ "$(docker image inspect -f '{{.Id}}' orca:latest)" = "$real" ] || fail "orca:latest should be the one asked for"
+  [ "$(docker image inspect -f '{{.Id}}' orca:previous)" = "$newer" ] || fail "orca:previous should be the one it replaced"
+  "$ORCA" image use previous </dev/null >/dev/null
+  [ "$(docker image inspect -f '{{.Id}}' orca:latest)" = "$newer" ] || fail "image use previous should swap back"
+  docker tag "$real" orca:latest
 }
 
 forwards() {
@@ -220,8 +230,32 @@ dashboard() {
   kill $serve_pid
 }
 
+# orca fallback, each kind, with checks in place of the shell (FALLBACKS.md's command for when no
+# orca runs is checked against the same code by a unit test)
+fallbacks() {
+  in_tty start "$T/dev/demo" >/dev/null
+  local home="$ORCA_DIR/projects/demo/home"
+  touch "$T/dev/demo/in-folder" "$home/in-home"
+  local tools='command -v claude && command -v gh && command -v git'
+  # Runs orca fallback in a pseudo-terminal (its docker run needs one); its exit is the command's
+  fb() { echo "cd '$T/dev/demo' && '$ORCA' fallback $1" >"$T/fb.sh"; script -qec "bash $T/fb.sh" /dev/null </dev/null; }
+
+  step "your folder and home"
+  fb "--kind home -- bash -c 'test -f /workspace/in-folder && test -f ~/in-home && $tools'" >/dev/null || fail "the folder, the home or a tool is missing"
+
+  step "your folder, a fresh home, printing the command it runs"
+  fb "--kind fresh-home -- bash -c 'test -f /workspace/in-folder && touch ~/writable && $tools'" | tee out.txt >/dev/null || fail "the folder, a writable home or a tool is missing"
+  grep -q "docker run -it --rm -v $T/dev/demo:/workspace orca:latest bash -c" out.txt || fail "orca fallback should print what it runs"
+
+  step "no folders from the Mac: a clone in ~, kept for going back in"
+  docker rm -f orca-fallback-demo >/dev/null 2>&1 || true
+  fb "--kind no-folders -- bash -c 'git clone -q --depth 1 https://github.com/orca-infra/orca ~/orca && touch ~/cloned'" >/dev/null || fail "cloning in a container with no Mac folders"
+  fb "--kind no-folders -- test -e /home/node/cloned" >/dev/null || fail "going back in should find the clone"
+  docker rm -f orca-fallback-demo >/dev/null
+}
+
 for s in "${SECTIONS[@]}"; do
-  declare -F "$s" >/dev/null || fail "no section \"$s\"; sections: projects terminals update forwards dashboard"
+  declare -F "$s" >/dev/null || fail "no section \"$s\"; sections: projects terminals update forwards dashboard fallbacks"
   echo; echo "== $s"
   fresh
   "$s"

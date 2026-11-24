@@ -5,7 +5,7 @@ import { del } from "../../commands/delete";
 import { list } from "../../commands/list";
 import { create } from "../../commands/new";
 import { stop } from "../../commands/stop";
-import { changesSince, RELEASES, REMOTE_IMAGE, update } from "../../commands/update";
+import { RELEASES, REMOTE_IMAGE, update } from "../../commands/update";
 import { fakeContext } from "../support/fake";
 
 function record(orcaDir: string, name: string, folder: string) {
@@ -43,21 +43,19 @@ test("new refuses a name Docker can't use", async () => {
 // ── delete ──────────────────────────────────────────────────────────────────────────────
 
 function withContainer(answers: string[] = ["app"]) {
-  const t = fakeContext({ volumes: ["orca-app_node_modules"] }, answers);
+  const t = fakeContext({}, answers);
   const dir = record(t.ctx.orcaDir, "app", "/Users/me/dev/app");
   t.state.containers.push({ name: "orca-app", workspace: "/Users/me/dev/app", home: join(dir, "home") });
   return { ...t, dir };
 }
 
-test("delete removes the container and its node_modules, keeps the home, after typing the name", async () => {
+test("delete removes the container, keeps the home, after typing the name", async () => {
   const t = withContainer();
   await del(t.ctx, "app", {});
   expect(t.state.containers).toHaveLength(0);
-  expect(t.state.volumes).toHaveLength(0);
   expect(existsSync(join(t.dir, "home"))).toBe(true);
   const out = t.output();
   expect(out).toContain("orca-app");
-  expect(out).toContain("orca-app_node_modules");
   expect(out).toMatch(/Kept:.*home/);
   expect(out).toContain("/Users/me/dev/app");
 });
@@ -133,8 +131,15 @@ test("update pulls the published image and names it orca:latest", async () => {
   await update(t.ctx, { self: false });
   // In the terminal, to show its progress
   expect(t.attached).toContainEqual(["pull", REMOTE_IMAGE]);
-  expect(t.calls).toContainEqual(["tag", REMOTE_IMAGE, "orca:latest"]);
+  expect(t.state.latest).toBe("sha256:new");
   expect(t.output()).toContain("updated");
+});
+
+test("update keeps the image it replaces as orca:previous, and says how to go back to it", async () => {
+  const t = fakeContext({ latest: "sha256:old", pulled: "sha256:new" });
+  await update(t.ctx, { self: false });
+  expect(t.state.tags?.["orca:previous"]).toBe("sha256:old");
+  expect(t.output()).toContain("orca image use previous");
 });
 
 test("update says when the image was already current", async () => {
@@ -171,7 +176,10 @@ test("update replaces orca with the published build after checking its checksum"
   });
   await update(t.ctx, { self: s.opts });
   expect(readFileSync(s.execPath, "utf8")).toBe("new binary");
-  expect(t.output()).toContain("aaa → bbb");
+  expect(t.output()).toContain("orca: now bbb (was aaa)");
+  // The one it replaced stays beside it, to go back to
+  expect(readFileSync(`${s.execPath}.previous`, "utf8")).toBe("old binary");
+  expect(t.output()).toContain("orca self use previous");
 });
 
 test("update refuses a build whose checksum doesn't match", async () => {
@@ -277,22 +285,7 @@ test("list shows which running projects are kept up", async () => {
   expect(t.output()).toContain('"keptUp": true');
 });
 
-test("update shows what the changelog says since the build it replaced, action needed first", async () => {
-  const t = fakeContext();
-  const s = selfUpdate(t, {
-    "latest/download/version": "bbb",
-    "download/cli-bbb/orca-darwin-arm64": "new binary",
-    "download/cli-bbb/orca-darwin-arm64.sha256": sha("new binary"),
-    "download/cli-bbb/CHANGELOG.md": "# Changelog\n\n## 2026-11-05\n\n- New: `orca thing`.\n- **Action needed:** run\n  `orca fix`.\n\n## 2026-10-01\n\n- Old news.\n",
-  });
-  await update(t.ctx, { self: s.opts });
-  const out = t.output();
-  expect(out.indexOf("Action needed: run orca fix.")).toBeGreaterThan(-1);
-  expect(out.indexOf("Action needed")).toBeLessThan(out.indexOf("New: orca thing."));
-  expect(out).not.toContain("Old news");
-});
-
-test("update without a changelog in the release still updates", async () => {
+test("update links to what's changed in the build it installs", async () => {
   const t = fakeContext();
   const s = selfUpdate(t, {
     "latest/download/version": "bbb",
@@ -300,12 +293,13 @@ test("update without a changelog in the release still updates", async () => {
     "download/cli-bbb/orca-darwin-arm64.sha256": sha("new binary"),
   });
   await update(t.ctx, { self: s.opts });
-  expect(readFileSync(s.execPath, "utf8")).toBe("new binary");
-  expect(t.output()).not.toContain("What's new");
+  expect(t.output()).toContain("What's changed: https://github.com/orca-infra/orca/blob/bbb/CHANGELOG.md");
 });
 
-test("changelog entries include the build's own day, and none without a date", () => {
-  const log = "## 2026-11-01\n\n- Same day.\n\n## 2026-10-31\n\n- Before.\n";
-  expect(changesSince(log, "2026-11-01")).toEqual(["Same day."]);
-  expect(changesSince(log, "")).toEqual([]);
+test("stop doesn't list runc's refusal as a terminal when the container lost its folders", async () => {
+  const t = running();
+  t.state.containers[0].refusesExec = true;
+  await stop(t.ctx, "app", {});
+  expect(t.output()).not.toContain("OCI runtime");
+  expect(t.state.containers[0].running).toBe(false);
 });

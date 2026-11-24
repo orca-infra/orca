@@ -22,6 +22,10 @@ export type FakeContainer = {
   cpus?: number;
   /** What docker stats says it uses, e.g. "2.1GiB" */
   used?: string;
+  /** Docker can't run any command in it (here with runc's message for a working directory it can't reach) */
+  refusesExec?: boolean;
+  /** Mount targets that aren't there inside it, e.g. ["/home/node"] */
+  missing?: string[];
 };
 
 export type FakeNetwork = { name: string; subnet: string; labels: Record<string, string> };
@@ -33,12 +37,19 @@ export type FakeState = {
   /** id of orca:latest, or null if the image isn't there */
   latest: string | null;
   created: Record<string, string>;
-  /** Images made before terminals (no orca.terminals label), or before orca up (no orca.up) */
+  /** Images made before terminals (no orca.terminals label) */
   noTerminals?: string[];
-  noUp?: string[];
+  /** Image names besides orca:latest on this Mac, and the ids they point at (e.g. orca:previous) */
+  tags?: Record<string, string>;
+  /** Published images by their dated tag (yyyy-mm-dd-commit), and their ids; `docker pull` brings one here */
+  published?: Record<string, string>;
+  /** orca's published builds, as GitHub's releases API lists them */
+  releases?: { tag_name: string; published_at: string }[];
   /** what `docker pull` makes orca:latest's remote tag point at */
   pulled?: string;
   failPull?: boolean;
+  /** docker commands that fail, by their first arguments, e.g. "network create" or "update" */
+  failing?: string[];
   /** Mac ports something else is listening on, so publishing them fails */
   taken?: number[];
   /** What Docker has in all (docker info); 16 GB and 10 CPUs unless set */
@@ -52,8 +63,10 @@ export function fakeDocker(state: FakeState) {
   const ok = (stdout = ""): Result => ({ code: 0, stdout, stderr: "" });
   const fail = (stderr: string): Result => ({ code: 1, stdout: "", stderr });
   const find = (n: string) => state.containers.find((c) => c.name === n);
+  // An image name, as Docker finds it on this Mac: orca:latest, an id, or another tag
+  const resolve = (ref: string) => (ref === "orca:latest" ? state.latest : ref.startsWith("sha256:") ? ref : state.tags?.[ref]);
   const imageLabels = (id: string): Record<string, string> =>
-    state.noTerminals?.includes(id) ? {} : state.noUp?.includes(id) ? { "orca.terminals": "1" } : { "orca.terminals": "1", "orca.up": "1" };
+    state.noTerminals?.includes(id) ? {} : { "orca.terminals": "1", "orca.up": "1", "orca.generation": "2" };
 
   function network([sub, ...a]: string[]): Result {
     const net = (n: string) => state.networks.find((x) => x.name === n);
@@ -91,6 +104,7 @@ export function fakeDocker(state: FakeState) {
 
   const docker: Docker = {
     async run(args) {
+      if (state.failing?.some((f) => args.join(" ").startsWith(f))) return fail(`fake docker: ${args.slice(0, 2).join(" ")} failed`);
       calls.push(args);
       const [cmd, ...rest] = args;
       if (cmd === "version") return ok("27.0.0");
@@ -100,8 +114,7 @@ export function fakeDocker(state: FakeState) {
         return ok(JSON.stringify(found.map(inspected)));
       }
       if (cmd === "image" && rest[0] === "inspect") {
-        const ref = rest[rest.length - 1];
-        const id = ref === "orca:latest" ? state.latest : ref;
+        const id = resolve(rest[rest.length - 1]);
         if (!id) return fail("No such image");
         return ok(JSON.stringify([{ Id: id, Created: state.created[id] ?? "2026-01-01T00:00:00Z", Config: { Labels: imageLabels(id) } }]));
       }
@@ -116,14 +129,17 @@ export function fakeDocker(state: FakeState) {
         return ok();
       }
       if (cmd === "network") return network(rest);
-      if (cmd === "run" && rest[0] === "-d") {
+      if ((cmd === "run" && rest[0] === "-d") || cmd === "create") {
         const flag = (f: string) => rest.flatMap((a, i) => (a === f ? [rest[i + 1]] : []));
         const taken = flag("-p").map((p) => Number(p.split(":")[1])).find((p) => state.taken?.includes(p));
         if (taken) return fail(`Bind for 127.0.0.1:${taken} failed: port is already allocated`);
-        // Like Docker, the container gets the image's labels too
-        const labels = { ...imageLabels(state.latest!), ...Object.fromEntries(flag("--label").map((l) => l.split("=") as [string, string])) };
+        // Like Docker: the image is the last argument, and the container gets its labels too
+        const ref = rest[rest.length - 1];
+        const image = resolve(ref) ?? ref;
+        const labels = { ...imageLabels(image), ...Object.fromEntries(flag("--label").map((l) => l.split("=") as [string, string])) };
         const limit = (f: string) => rest.find((a) => a.startsWith(`${f}=`))?.slice(f.length + 1);
-        state.containers.push({ name: flag("--name")[0], running: true, image: state.latest!, labels, networks: [], memory: Number(limit("--memory")), cpus: Number(limit("--cpus")) });
+        const mount = (dest: string) => flag("-v").find((v) => v.endsWith(`:${dest}`))?.slice(0, -dest.length - 1);
+        state.containers.push({ name: flag("--name")[0], running: cmd === "run", image, labels, networks: [], memory: Number(limit("--memory")), cpus: Number(limit("--cpus")), workspace: mount("/workspace"), home: mount("/home/node") });
         return ok("id");
       }
       if (cmd === "update") {
@@ -153,10 +169,22 @@ export function fakeDocker(state: FakeState) {
         if (c) (c.running = false), (c.up = false);
         return c ? ok() : fail("No such container");
       }
+      // Docker prints runc's refusal on stdout
+      if (cmd === "exec" && find(rest.find((a) => !a.startsWith("-") && !a.includes("=")) ?? "")?.refusesExec)
+        return {
+          code: 126,
+          stdout: "OCI runtime exec failed: exec failed: unable to start container process: current working directory is outside of container mount namespace root -- possible container breakout detected: unknown\n",
+          stderr: "",
+        };
+      // What a terminal needs, as orca checks it (checkReady): the folders it mounts
+      if (cmd === "exec" && rest.some((a) => a.includes("|| echo 'missing"))) {
+        const c = find(rest[0]);
+        return ok(["orca-ran", ...(c?.missing ?? []).map((m) => `missing ${m}`)].join("\n") + "\n");
+      }
       // The mark and the terminals together, as orca asks for them (terminals.ts)
       if (cmd === "exec" && rest.some((a) => a.includes("list-sessions"))) {
         const c = find(rest[0]);
-        const lines = [...(c?.up ? ["up"] : []), ...(c?.terminals ?? [])];
+        const lines = ["orca-ran", ...(c?.up ? ["up"] : []), ...(c?.terminals ?? [])];
         return { code: c?.terminals?.length ? 0 : 1, stdout: lines.map((l) => l + "\n").join(""), stderr: c?.terminals?.length ? "" : "no server running" };
       }
       if (cmd === "exec" && rest.includes("touch")) {
@@ -169,14 +197,25 @@ export function fakeDocker(state: FakeState) {
       if (cmd === "exec" && rest.some((a) => a.endsWith("root.crt"))) return ok("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");
       if (cmd === "exec") return ok();
       if (cmd === "tag") {
-        if (state.pulled) state.latest = state.pulled;
+        const id = resolve(rest[0]);
+        if (!id) return fail("No such image");
+        if (rest[1] === "orca:latest") state.latest = id;
+        else state.tags = { ...state.tags, [rest[1]]: id };
         return ok();
       }
       return fail(`fake docker: unhandled ${args.join(" ")}`);
     },
     async attach(args) {
       attached.push(args);
-      if (args[0] === "pull") return state.failPull ? 1 : 0;
+      if (args[0] === "pull") {
+        if (state.failPull) return 1;
+        // The published :latest is what `pulled` says; a dated one, what `published` has
+        const tag = args[1].split(":").pop()!;
+        const id = tag === "latest" ? (state.pulled ?? state.latest) : state.published?.[tag];
+        if (!id) return 1;
+        state.tags = { ...state.tags, [args[1]]: id };
+        return 0;
+      }
       return 0;
     },
   };
@@ -227,6 +266,13 @@ export function fakeContext(state: Partial<FakeState> = {}, answers: (string | n
       return key in host ? { code: 0, stdout: host[key] + "\n", stderr: "" } : { code: 1, stdout: "", stderr: "" };
     },
     lookup: async (hostname) => names[hostname] ?? [],
+    // What's published: GitHub's container registry (its tags) and orca's releases
+    fetch: async (url) => {
+      if (url.startsWith("https://ghcr.io/token")) return full.published ? Response.json({ token: "t" }) : new Response("", { status: 503 });
+      if (url.includes("/tags/list")) return Response.json({ tags: ["latest", "buildcache-arm64", ...Object.keys(full.published ?? {})] });
+      if (url.startsWith("https://api.github.com/repos/") && full.releases) return Response.json(full.releases);
+      return new Response("", { status: 404 });
+    },
   };
   return { ctx, home, state: full, calls, attached, lines, launched, output: () => lines.join("\n") };
 }

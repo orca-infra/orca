@@ -63,8 +63,10 @@ test("a running proxy is reloaded, not recreated", async () => {
   await forward(t.ctx, { project: "app", add: 3000 });
   await forward(t.ctx, { project: "app", add: 4000 });
   expect(t.calls.filter((c) => c[0] === "run")).toHaveLength(1);
-  expect(t.calls.some((c) => c[0] === "exec" && c.includes("reload"))).toBe(true);
+  const reload = t.calls.find((c) => c[0] === "exec" && c.some((a) => a.includes("caddy reload")));
   expect(caddyfile(t)).toContain("host 4000.app.localhost");
+  // Given the config itself, since Docker Desktop's Mac mounts can show a grown file cut short
+  expect(reload?.at(-1)).toBe(caddyfile(t));
 });
 
 test("the proxy joins every project network and refuses requests from them", async () => {

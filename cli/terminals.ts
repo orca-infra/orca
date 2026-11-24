@@ -1,4 +1,5 @@
-import type { Context } from "./context";
+import { OrcaError, tilde, type Context } from "./context";
+import { hasTerminals } from "./compat";
 import type { Container } from "./docker";
 
 /**
@@ -17,25 +18,24 @@ export type Terminal = {
   title: string | null;
 };
 
-/** Containers made from images before terminals open plain shells instead. */
-export const hasTerminals = (c: Container) => c.labels["orca.terminals"] === "1";
-
-/** Containers whose image can be kept up (`orca up`); older ones stop a minute after their last terminal. */
-export const canKeepUp = (c: Container) => c.labels["orca.up"] === "1";
-
 /** What keeps a running container up: its open terminals, and whether `orca up` marked it. */
 export type Activity = { terminals: Terminal[]; up: boolean };
 
 /** The mark `orca up` leaves, in a folder emptied on every start (container-features.md) */
 const UP = "/run/orca/up";
 
+/** The first line of what orca runs in a container, so its output can't be mistaken for anything else */
+const RAN = "orca-ran";
+
 const FORMAT = "#{session_name}|#{session_attached}|#{session_activity}|#{pane_current_command}|#{host}|#{pane_title}";
 
 /** A running container's activity (no terminals when tmux has no server yet). */
 export async function activity(ctx: Context, container: string): Promise<Activity> {
   // Both in one docker exec, as the dashboard asks every few seconds
-  const r = await ctx.docker.run(["exec", container, "sh", "-c", `test -e ${UP} && echo up; tmux list-sessions -F '${FORMAT}'`]);
-  const lines = r.stdout.split("\n").filter(Boolean);
+  const r = await ctx.docker.run(["exec", container, "sh", "-c", `echo ${RAN}; test -e ${UP} && echo up; tmux list-sessions -F '${FORMAT}'`]);
+  const [ran, ...lines] = r.stdout.split("\n").filter(Boolean);
+  // Anything else on stdout (Docker's own message, when it couldn't run the command) isn't terminals
+  if (ran !== RAN) return { terminals: [], up: false };
   const terminals = lines
     .filter((line) => line !== "up")
     .map((line) => {
@@ -46,6 +46,28 @@ export async function activity(ctx: Context, container: string): Promise<Activit
     })
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   return { terminals, up: lines.includes("up") };
+}
+
+/**
+ * Whether a running container has what a terminal needs: Docker can run a command in it, and
+ * each folder orca mounts from the Mac is there. If not, says what's missing and what to do.
+ */
+export async function checkReady(ctx: Context, name: string, container: string, mounted: { source: string; target: string }[]) {
+  const checks = mounted.map((m) => `[ -d '${m.target}/.' ] && [ -r '${m.target}/.' ] || echo 'missing ${m.target}'`).join("; ");
+  const r = await ctx.docker.run(["exec", container, "sh", "-c", `echo ${RAN}; ${checks}`]);
+  const [ran, ...lines] = r.stdout.split("\n").filter(Boolean);
+  const missing = mounted.filter((m) => lines.includes(`missing ${m.target}`));
+  const problem =
+    ran !== RAN
+      ? `Docker couldn't run a command in it (${(r.stdout + r.stderr).trim().split("\n")[0] || `exit ${r.code}`})`
+      : missing.length
+        ? `${missing.map((m) => `${m.target} (${tilde(ctx, m.source)} on this Mac)`).join(" and ")} ${missing.length === 1 ? "isn't" : "aren't"} there inside it`
+        : null;
+  if (problem)
+    throw new OrcaError(
+      `${container} isn't ready: ${problem}.`,
+      `Try: orca stop ${name}, then orca start again. If it still isn't ready, restart Docker Desktop. To work meanwhile: orca fallback`,
+    );
 }
 
 /** The terminals open in a running container. */

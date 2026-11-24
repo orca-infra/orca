@@ -47,7 +47,7 @@ export async function act(ctx: Context, projects: Project[], choice: Choice): Pr
   const folder = p.folder ?? p.legacy?.workspace;
   if (!folder) throw new OrcaError(`${p.name} has no project folder on record.`);
   if (choice.action === "update") {
-    ctx.print(`Switching ${p.name} to the newest image recreates its container.`);
+    ctx.print(`Switching ${p.name} to the current image recreates its container.`);
     for (const line of RECREATING) ctx.print(`  ${line}`);
     if (p.container?.running && !(await stop(ctx, p.name, {}))) return 0;
   }

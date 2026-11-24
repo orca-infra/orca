@@ -54,7 +54,10 @@ export function writeForwards(ctx: Context, project: string, forwards: Forward[]
 export function allForwards(ctx: Context): ({ project: string } & Forward)[] {
   const dir = projectsDir(ctx);
   if (!existsSync(dir)) return [];
-  return readdirSync(dir).flatMap((project) => readForwards(ctx, project).map((f) => ({ project, ...f })));
+  // Sorted, so the proxy's config doesn't depend on the order the disk lists them in
+  return readdirSync(dir)
+    .sort()
+    .flatMap((project) => readForwards(ctx, project).map((f) => ({ project, ...f })));
 }
 
 /** An extra address for a forward: the URL's origin, since paths go through as they are. */
@@ -168,7 +171,8 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
   }
   const ports = extraPorts(ctx, forwards);
   mkdirSync(proxyDir(ctx), { recursive: true });
-  writeFileSync(join(proxyDir(ctx), "Caddyfile"), caddyfile([...servers.values()], networks.flatMap((n) => n.subnets)));
+  const config = caddyfile([...servers.values()], networks.flatMap((n) => n.subnets));
+  writeFileSync(join(proxyDir(ctx), "Caddyfile"), config);
 
   // Published ports are fixed when a container is made, so a change means a new proxy
   if (proxy && (proxy.labels["orca.port"] !== String(port) || proxy.labels["orca.ports"] !== ports.join(","))) {
@@ -205,7 +209,10 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
   }
 
   for (const n of networks) if (!proxy.networks.includes(n.name)) await docker(ctx, ["network", "connect", n.name, PROXY]);
-  if (reload) await docker(ctx, ["exec", PROXY, "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]);
+  // A reload is handed the config by orca, so it doesn't depend on reading it through a folder
+  // shared from the Mac
+  if (reload)
+    await docker(ctx, ["exec", PROXY, "sh", "-c", 'printf %s "$1" > /tmp/Caddyfile && exec caddy reload --config /tmp/Caddyfile --adapter caddyfile', "sh", config]);
   if (forwards.some((f) => f.urls.some((u) => parseAddress(u).https))) await copyCa(ctx);
   return { port, ports, running: true };
 }

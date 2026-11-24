@@ -32,7 +32,7 @@ From orca:
 | Box settings | Memory and CPUs, per project or as defaults | `cli/box-settings.ts` |
 | Kept-up mark | Lets `orca up` keep the container running without terminals | `containerArgs`, `image/keepalive.sh` |
 | Project name | Terminal titles and Remote Control sessions named after the project | `containerArgs` |
-| `workspace-file` | Editors search and index each git repo in the project folder (optional) | `workspaceFile` in `cli/features.ts` |
+| `workspace-file` | Editors search and index each git repo in the project folder (optional). The search skips hidden folders and a built-in list (`SKIPPED`: `node_modules`); a file without orca's mark is the user's, and orca says once when it differs from the folder's repos | `workspaceFile` in `cli/features.ts` |
 
 From the image:
 

@@ -54,7 +54,10 @@ export function writeForwards(ctx: Context, project: string, forwards: Forward[]
 export function allForwards(ctx: Context): ({ project: string } & Forward)[] {
   const dir = projectsDir(ctx);
   if (!existsSync(dir)) return [];
-  return readdirSync(dir).flatMap((project) => readForwards(ctx, project).map((f) => ({ project, ...f })));
+  // Sorted, so the proxy's config doesn't depend on the order the disk lists them in
+  return readdirSync(dir)
+    .sort()
+    .flatMap((project) => readForwards(ctx, project).map((f) => ({ project, ...f })));
 }
 
 /** An extra address for a forward: the URL's origin, since paths go through as they are. */

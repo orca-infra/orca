@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { OrcaError } from "./errors";
 import { tilde, type Context } from "./context";
 import { checkWithout } from "./features";
+import { configFile } from "./state";
 
 /** Orca's settings, in ~/.orca/config.json. Every key is optional. */
 export type Config = {
@@ -23,7 +23,6 @@ export type Config = {
 
 const DEFAULTS: Config = { proxyPort: 7320, servePort: 7321 };
 
-export const configFile = (ctx: Context) => join(ctx.orcaDir, "config.json");
 
 export function readConfig(ctx: Context): Config {
   const file = configFile(ctx);

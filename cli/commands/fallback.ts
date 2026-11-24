@@ -4,9 +4,10 @@ import { OrcaError } from "../errors";
 import { type Context } from "../context";
 import { ensureImage } from "../images";
 import { attach, docker } from "../docker";
-import { homeDir, listContainers } from "../projects";
-import { projectAt } from "../proxy";
 import { fallbackName } from "../names";
+import { homeDir } from "../state";
+import { listContainers } from "../containers";
+import { projectAt } from "../records";
 
 /** The kinds of plain container orca fallback runs */
 export const KINDS = {

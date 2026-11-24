@@ -1,9 +1,8 @@
 import { chmodSync, copyFileSync, renameSync, writeFileSync } from "node:fs";
 import { OrcaError } from "../errors";
 import { type Context } from "../context";
-import { makeCurrent } from "../images";
+import { inspectImage, makeCurrent } from "../images";
 import { attach, docker } from "../docker";
-import { inspectImage } from "../projects";
 import { RELEASES, REPO } from "../release";
 import { REMOTE_IMAGE } from "../names";
 

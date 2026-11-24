@@ -7,13 +7,15 @@ import { makeRecord } from "../commands/new";
 import { OrcaError } from "../errors";
 import { tilde, type Context } from "../context";
 import { stateOf, type State } from "../present";
-import { inspectImage, latestImage, loadProjects, type Project } from "../projects";
+import { loadProjects, type Project } from "../projects";
 import { dockerTotal, effective, memoryUsed, readBoxSettings, type BoxSettings, type Effective, type Resources } from "../box-settings";
-import { allForwards, caFile, parseAddress, pointsHere, proxyState, trustCommand, urlFor } from "../proxy";
+import { allForwards, parseAddress, pointsHere, proxyState, trustCommand, urlFor } from "../proxy";
 import { listSessions, type Session } from "../sessions";
 import { openInTerminal } from "../terminal";
 import { hasTerminals } from "../compat";
 import { activities, activity, listTerminals, type Activity, type Terminal } from "../terminals";
+import { inspectImage, latestImage } from "../images";
+import { caFile } from "../state";
 
 /** What the dashboard shows for a project. */
 export type ProjectView = {

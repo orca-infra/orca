@@ -1,7 +1,7 @@
 import { OrcaError } from "./errors";
-import { type Context } from "./context";
-import { attach, docker } from "./docker";
-import { inspectImage, type Image } from "./projects";
+import { labelGeneration } from "./compat";
+import type { Context } from "./context";
+import { attach, docker, probe } from "./docker";
 import { CURRENT_IMAGE, PREVIOUS_IMAGE, REGISTRY_IMAGE, REMOTE_IMAGE } from "./names";
 
 /** A published image's tag: the day it was built and its commit */
@@ -69,3 +69,18 @@ export async function publishedTags(ctx: Context): Promise<string[] | null> {
 
 /** When an image was built, as yyyy-mm-dd hh:mm */
 export const built = (image: Image | null) => image?.created.slice(0, 16).replace("T", " ") ?? "unknown";
+
+/** `generation`: which orca made it (compat.ts) */
+export type Image = { id: string; created: string; generation: number };
+
+export async function latestImage(ctx: Context): Promise<Image | null> {
+  return inspectImage(ctx, CURRENT_IMAGE);
+}
+
+export async function inspectImage(ctx: Context, ref: string): Promise<Image | null> {
+  const r = await probe(ctx, ["image", "inspect", ref]);
+  if (r.code !== 0) return null;
+  const [img] = JSON.parse(r.stdout) as { Id: string; Created: string; Config?: { Labels?: Record<string, string> | null } }[];
+  const labels = img.Config?.Labels ?? {};
+  return { id: img.Id, created: img.Created, generation: labelGeneration(labels) };
+}

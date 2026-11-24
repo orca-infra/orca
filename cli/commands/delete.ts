@@ -3,9 +3,11 @@ import { join } from "node:path";
 import { OrcaError } from "../errors";
 import { tilde, type Context } from "../context";
 import { docker, probe } from "../docker";
-import { homeDir, listContainers, loadProjects, recordDir } from "../projects";
+import { loadProjects } from "../projects";
 import { allForwards, syncProxy } from "../proxy";
 import { networkName, PROXY } from "../names";
+import { homeDir, ownWorkspaceDir, recordDir } from "../state";
+import { listContainers } from "../containers";
 
 export type DeleteOptions = { home?: boolean; yes?: boolean };
 
@@ -30,7 +32,7 @@ export async function del(ctx: Context, name: string, opts: DeleteOptions): Prom
   const removeHome = Boolean(opts.home) && existsSync(home);
   const record = recordDir(ctx, name);
   // The record goes with the home, unless it holds the project's code (orca new)
-  const removeRecord = removeHome && !existsSync(join(record, "workspace"));
+  const removeRecord = removeHome && !existsSync(ownWorkspaceDir(ctx, name));
   const recordFiles = removeRecord ? readdirSync(record).filter((f) => f !== "home") : [];
 
   const removing = [
@@ -60,7 +62,7 @@ export async function del(ctx: Context, name: string, opts: DeleteOptions): Prom
   if (removeHome) {
     rmSync(home, { recursive: true, force: true });
     if (removeRecord) rmSync(record, { recursive: true, force: true });
-    else if (readdirSync(record).length) ctx.print(`The code stays in ${tilde(ctx, join(record, "workspace"))}; remove it yourself if you don't need it.`);
+    else if (readdirSync(record).length) ctx.print(`The code stays in ${tilde(ctx, ownWorkspaceDir(ctx, name))}; remove it yourself if you don't need it.`);
   }
   // The project's network goes with its container; the proxy leaves it first
   const network = networkName(name);

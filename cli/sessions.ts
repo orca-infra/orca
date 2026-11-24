@@ -1,7 +1,7 @@
 import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Context } from "./context";
-import { homeDir } from "./projects";
+import { homeDir } from "./state";
 
 /** A Claude session in a project's home, as the dashboard lists it. */
 export type Session = { project: string; id: string; title: string; updated: number };

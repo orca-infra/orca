@@ -5,9 +5,9 @@ import { del } from "../../commands/delete";
 import { forward } from "../../commands/forward";
 import { start } from "../../commands/start";
 import { list } from "../../commands/list";
-import { projectAt } from "../../proxy";
 import { fakeContext } from "../support/fake";
 import { hostFor, PROXY, PROXY_IMAGE } from "../../names";
+import { projectAt } from "../../records";
 
 function project(t: ReturnType<typeof fakeContext>, name = "app") {
   const folder = join(t.home, "dev", name);

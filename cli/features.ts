@@ -6,8 +6,9 @@
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { OrcaError } from "./errors";
-import { projectsDir, type Context } from "./context";
+import { type Context } from "./context";
 import { resourceArgs, type Resources } from "./box-settings";
+import { workspaceNoticeFile } from "./state";
 
 /** `network` is null when the project's own couldn't be set up: Docker's default then */
 export type Box = { name: string; folder: string; home: string; network: string | null; resources: Resources };
@@ -126,7 +127,7 @@ function noticeUsersFile(ctx: Context, name: string, file: string, text: string,
   }
   const missing = repos.filter((r) => !listed.includes(r));
   const notThere = listed.filter((p) => !existsSync(join(file, "..", p)));
-  const seen = join(projectsDir(ctx), name, "workspace-file-notice");
+  const seen = workspaceNoticeFile(ctx, name);
   const now = JSON.stringify({ missing, notThere });
   if (!missing.length && !notThere.length) return rmSync(seen, { force: true });
   if (existsSync(seen) && readFileSync(seen, "utf8") === now) return;

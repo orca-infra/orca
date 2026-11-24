@@ -1,9 +1,11 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
-import { beforeHomes, labelGeneration } from "./compat";
-import { projectsDir, type Context } from "./context";
-import { type Container, docker, parseContainer, probe } from "./docker";
-import { CURRENT_IMAGE } from "./names";
+import { basename } from "node:path";
+import { beforeHomes } from "./compat";
+import { type Context } from "./context";
+import { docker } from "./docker";
+import { homeDir, ownWorkspaceDir } from "./state";
+import { type Container, parseContainer } from "./containers";
+import { migrated, readFolder, recordNames } from "./records";
+import { latestImage } from "./images";
 
 /**
  * A project is a record, ~/.orca/projects/<name>/, holding its home (mounted as ~) and
@@ -27,21 +29,9 @@ export type Project = {
   outdated: boolean;
 };
 
-export const recordDir = (ctx: Context, name: string) => join(projectsDir(ctx), name);
-export const homeDir = (ctx: Context, name: string) => join(recordDir(ctx, name), "home");
-
-export function readFolder(ctx: Context, name: string): string | null {
-  const file = join(recordDir(ctx, name), "project-path");
-  // Without a trailing slash, to match the folders Docker reports
-  return existsSync(file) ? readFileSync(file, "utf8").trim().replace(/(.)\/+$/, "$1") || null : null;
-}
-
 export async function loadProjects(ctx: Context): Promise<Project[]> {
   const [containers, latest] = await Promise.all([listContainers(ctx), latestImage(ctx)]);
-  const dir = projectsDir(ctx);
-  const names = existsSync(dir)
-    ? readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
-    : [];
+  const names = recordNames(ctx);
 
   const projects: Project[] = names.map((name) => {
     const folder = readFolder(ctx, name);
@@ -52,7 +42,7 @@ export async function loadProjects(ctx: Context): Promise<Project[]> {
     return {
       name,
       folder,
-      managed: folder === join(recordDir(ctx, name), "workspace"),
+      managed: folder === ownWorkspaceDir(ctx, name),
       container,
       legacy,
       outdated: Boolean(container && latest && container.image !== latest.id),
@@ -78,27 +68,10 @@ export async function loadProjects(ctx: Context): Promise<Project[]> {
   return projects.sort((a, b) => lastUsed(b) - lastUsed(a) || a.name.localeCompare(b.name));
 }
 
-/** orca-migrate.sh writes migrated-from once the home it copied checks out; a failed run doesn't. */
-export const migrated = (ctx: Context, name: string) => existsSync(join(recordDir(ctx, name), "migrated-from"));
 
 export async function listContainers(ctx: Context): Promise<Container[]> {
   const ids = await docker(ctx, ["ps", "-a", "-q"]);
   const list = ids.split("\n").filter(Boolean);
   if (list.length === 0) return [];
   return (JSON.parse(await docker(ctx, ["inspect", ...list])) as Parameters<typeof parseContainer>[0][]).map(parseContainer);
-}
-
-/** `generation`: which orca made it (compat.ts) */
-export type Image = { id: string; created: string; generation: number };
-
-export async function latestImage(ctx: Context): Promise<Image | null> {
-  return inspectImage(ctx, CURRENT_IMAGE);
-}
-
-export async function inspectImage(ctx: Context, ref: string): Promise<Image | null> {
-  const r = await probe(ctx, ["image", "inspect", ref]);
-  if (r.code !== 0) return null;
-  const [img] = JSON.parse(r.stdout) as { Id: string; Created: string; Config?: { Labels?: Record<string, string> | null } }[];
-  const labels = img.Config?.Labels ?? {};
-  return { id: img.Id, created: img.Created, generation: labelGeneration(labels) };
 }

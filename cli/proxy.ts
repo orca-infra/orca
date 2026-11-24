@@ -1,12 +1,13 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, sep } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { caddyfile, type Server } from "./caddyfile";
 import { readConfig } from "./config";
 import { OrcaError } from "./errors";
-import { projectsDir, tilde, type Context } from "./context";
+import { tilde, type Context } from "./context";
 import { docker, probe } from "./docker";
-import { listContainers, readFolder, recordDir } from "./projects";
 import { containerName, hostFor, label, LABELS, networkName, PROXY, PROXY_DATA, PROXY_IMAGE } from "./names";
+import { caFile, configFile, forwardsFile, proxyConfigFile, proxyDir } from "./state";
+import { listContainers } from "./containers";
+import { recordNames } from "./records";
 
 /**
  * Forwards: one Caddy container, orca-proxy, is the only thing published on the Mac
@@ -15,12 +16,10 @@ import { containerName, hostFor, label, LABELS, networkName, PROXY, PROXY_DATA, 
  * routed to that project's container over the project's own network, which only the proxy
  * also joins. Orca starts the proxy while any project has forwards and removes it when none do.
  */
-export const proxyDir = (ctx: Context) => join(ctx.orcaDir, "proxy");
 
 export const urlFor = (ctx: Context, port: number, project: string) =>
   `http://${hostFor(port, project)}:${readConfig(ctx).proxyPort}`;
 
-const forwardsFile = (ctx: Context, project: string) => join(recordDir(ctx, project), "forwards");
 
 /** A forwarded port, and the addresses it has besides its usual one, e.g. https://dev.myapp.com. */
 export type Forward = { port: number; urls: string[] };
@@ -48,10 +47,8 @@ export function writeForwards(ctx: Context, project: string, forwards: Forward[]
 
 /** Every project's forwards, from the records. */
 export function allForwards(ctx: Context): ({ project: string } & Forward)[] {
-  const dir = projectsDir(ctx);
-  if (!existsSync(dir)) return [];
   // Sorted, so the proxy's config doesn't depend on the order the disk lists them in
-  return readdirSync(dir)
+  return recordNames(ctx)
     .sort()
     .flatMap((project) => readForwards(ctx, project).map((f) => ({ project, ...f })));
 }
@@ -86,23 +83,10 @@ export async function pointsHere(ctx: Context, host: string): Promise<boolean> {
 
 const CA_IN_PROXY = "/data/caddy/pki/authorities/local/root.crt";
 
-/** The authority's certificate, copied out for the Mac to trust. */
-export const caFile = (ctx: Context) => join(proxyDir(ctx), "orca-ca.crt");
 
 /** The command that makes this Mac trust it, for the platforms orca knows one for. */
 export const trustCommand = (ctx: Context) =>
   process.platform === "darwin" ? `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${tilde(ctx, caFile(ctx))}` : null;
-
-/** The project whose folder contains `dir`, if any. */
-export function projectAt(ctx: Context, dir: string): string | null {
-  const dirs = existsSync(projectsDir(ctx)) ? readdirSync(projectsDir(ctx)) : [];
-  let best: { name: string; length: number } | null = null;
-  for (const name of dirs) {
-    const folder = readFolder(ctx, name);
-    if (folder && (dir === folder || dir.startsWith(folder + sep)) && (!best || folder.length > best.length)) best = { name, length: folder.length };
-  }
-  return best?.name ?? null;
-}
 
 /** Makes sure the project's own network exists. */
 export async function ensureNetwork(ctx: Context, project: string): Promise<string> {
@@ -166,7 +150,7 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
   const ports = extraPorts(ctx, forwards);
   mkdirSync(proxyDir(ctx), { recursive: true });
   const config = caddyfile([...servers.values()], networks.flatMap((n) => n.subnets));
-  writeFileSync(join(proxyDir(ctx), "Caddyfile"), config);
+  writeFileSync(proxyConfigFile(ctx), config);
 
   // Published ports are fixed when a container is made, so a change means a new proxy
   if (proxy && (proxy.labels[LABELS.proxyPort] !== String(port) || proxy.labels[LABELS.proxyPorts] !== ports.join(","))) {
@@ -179,7 +163,7 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
     for (const p of [port, ...ports])
       if (!(await ctx.portFree(p)))
         throw p === port
-          ? new OrcaError(`Port ${port} on this Mac is already taken, so the forwards proxy can't start.`, `Choose another in ${tilde(ctx, join(ctx.orcaDir, "config.json"))}: {"proxyPort": ${port + 1}}`)
+          ? new OrcaError(`Port ${port} on this Mac is already taken, so the forwards proxy can't start.`, `Choose another in ${tilde(ctx, configFile(ctx))}: {"proxyPort": ${port + 1}}`)
           : new OrcaError(`Port ${p} on this Mac is already taken, so the forwards proxy can't serve addresses on it.`, "Stop what's using it, or use a URL with another port.");
     const r = await probe(ctx, [
       "run", "-d",

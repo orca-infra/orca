@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { CURRENT, checkSupported, generation, HOMES, OLDER, olderFor, TERMINALS, type Status } from "../../compat";
-import type { Container } from "../../docker";
 import { fakeContext } from "../support/fake";
+import { type Container } from "../../containers";
 
 const box = (labels: Record<string, string>, home: string | null = "/h"): Container => ({
   name: "orca-app",

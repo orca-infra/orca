@@ -1,7 +1,7 @@
 import { OrcaError } from "../errors";
 import { tilde, type Context } from "../context";
-import { built, ensureImage, makeCurrent, publishedTags } from "../images";
-import { inspectImage, loadProjects, type Image, type Project } from "../projects";
+import { built, ensureImage, type Image, inspectImage, makeCurrent, publishedTags } from "../images";
+import { loadProjects, type Project } from "../projects";
 
 import { start } from "./start";
 import { CURRENT_IMAGE, PREVIOUS_IMAGE, REGISTRY_IMAGE } from "../names";

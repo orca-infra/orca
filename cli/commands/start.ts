@@ -1,17 +1,19 @@
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import { OrcaError } from "../errors";
-import { projectsDir, tilde, type Context } from "../context";
+import { tilde, type Context } from "../context";
 import { attach, docker, probe } from "../docker";
-import { homeDir, inspectImage, latestImage, listContainers, migrated, readFolder, recordDir } from "../projects";
 import { readConfig } from "../config";
-import { built, ensureImage } from "../images";
+import { built, ensureImage, inspectImage, latestImage } from "../images";
 import { applyCreation, checkWithout, containerArgs, mounts, workspaceFile } from "../features";
 import { applySettings, describeResources, effective } from "../box-settings";
 import { allForwards, ensureNetwork, syncProxy } from "../proxy";
 import { beforeHomes, checkSupported, hasTerminals, TERMINALS } from "../compat";
 import { activity, checkReady, describe, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
 import { containerName, CURRENT_IMAGE, label, PROXY } from "../names";
+import { homeDir } from "../state";
+import { listContainers } from "../containers";
+import { claimRecord, migrated, recordFor } from "../records";
 
 export type StartOptions = {
   fresh?: boolean;
@@ -229,25 +231,6 @@ async function plainShell(ctx: Context, name: string, container: string, running
 }
 
 const count = (n: number) => `${n} terminal${n === 1 ? "" : "s"}`;
-
-/** The record already pointing at this folder, if any (e.g. `orca new` projects). */
-function recordFor(ctx: Context, folder: string): string | null {
-  const dir = projectsDir(ctx);
-  if (!existsSync(dir)) return null;
-  return readdirSync(dir).find((n) => readFolder(ctx, n) === folder) ?? null;
-}
-
-/** One home per project: two folders with the same name must not share memory. */
-function claimRecord(ctx: Context, name: string, folder: string) {
-  const owner = readFolder(ctx, name);
-  if (owner && owner !== folder)
-    throw new OrcaError(
-      `The project "${name}" belongs to ${tilde(ctx, owner)}, not this folder.`,
-      `If that project moved here, update ${tilde(ctx, join(recordDir(ctx, name), "project-path"))} to this path.`,
-    );
-  mkdirSync(homeDir(ctx, name), { recursive: true });
-  if (!owner) writeFileSync(join(recordDir(ctx, name), "project-path"), folder + "\n");
-}
 
 const isEmpty = (dir: string) => !existsSync(dir) || readdirSync(dir).length === 0;
 

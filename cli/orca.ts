@@ -18,8 +18,8 @@ import { OrcaError } from "./errors";
 import { realContext } from "./context";
 import { optionalIds } from "./features";
 import { serve } from "./server/serve";
-import { projectAt } from "./proxy";
 import { drawView, VIEW_COMMAND } from "./ui/show";
+import { projectAt } from "./records";
 
 const HELP = `orca: each project in its own container, with its own home
 

@@ -9,6 +9,7 @@ import { orcaPath } from "../terminal";
 import page from "../web/index.html";
 import { createApi } from "./api";
 import { guard, securityHeaders } from "./guard";
+import { serveTokenFile } from "../state";
 
 /**
  * The dashboard: one per Mac, on 127.0.0.1:<servePort>. A new token each run, written where
@@ -19,7 +20,7 @@ export async function serve(ctx: Context, opts: { open: boolean }): Promise<neve
   const { servePort: port } = readConfig(ctx);
   const token = randomBytes(32).toString("base64url");
   mkdirSync(ctx.orcaDir, { recursive: true });
-  const tokenFile = join(ctx.orcaDir, "serve-token");
+  const tokenFile = serveTokenFile(ctx);
   writeFileSync(tokenFile, token + "\n", { mode: 0o600 });
   chmodSync(tokenFile, 0o600);
 

@@ -1,7 +1,7 @@
 import { OrcaError } from "./errors";
 import { type Context } from "./context";
-import type { Container } from "./docker";
-import { label, LABELS } from "./names";
+import { LABELS } from "./names";
+import { type Container } from "./containers";
 
 /**
  * Containers made by older orca versions, by generation: the one place orca tells them apart,

@@ -4,7 +4,6 @@ import { keptBy, stateOf, symbol, IMAGE_UPDATE } from "../present";
 import { loadProjects } from "../projects";
 import { allForwards, proxyState, urlFor } from "../proxy";
 import { activities } from "../terminals";
-import { label } from "../names";
 
 export async function list(ctx: Context, opts: { json?: boolean }): Promise<void> {
   const projects = await loadProjects(ctx);

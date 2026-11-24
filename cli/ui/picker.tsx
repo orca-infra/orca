@@ -2,7 +2,6 @@ import { Box, Text, useApp, useInput } from "ink";
 import { useState } from "react";
 import { IMAGE_UPDATE, stateOf, symbol, tone } from "../present";
 import type { Project } from "../projects";
-import { label } from "../names";
 
 export type Choice = { action: "start" | "update" | "delete"; project: string } | { action: "new" } | { action: "quit" };
 

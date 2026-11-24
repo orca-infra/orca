@@ -1,8 +1,8 @@
 import { OrcaError } from "./errors";
 import { tilde, type Context } from "./context";
 import { hasTerminals } from "./compat";
-import type { Container } from "./docker";
 import { probe } from "./docker";
+import { type Container } from "./containers";
 
 /**
  * A terminal in a project's container: a tmux session, so it keeps running when its window

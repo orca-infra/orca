@@ -23,7 +23,8 @@ test("a folder holding git repos gets a workspace file: a root per repo, each hi
   expect(w.folders).toEqual([{ name: "app", path: "." }, { path: "api" }, { path: "libs/shared" }, { path: "web" }]);
   expect(w.settings["files.exclude"]).toEqual({ api: true, "libs/shared": true, web: true });
   expect(readFileSync(file(dir), "utf8").split("\n")[0]).toStartWith("// Made by orca");
-  expect(t.output()).toContain("Workspace file: app.code-workspace, with 3 repos");
+  expect(t.output()).toContain("Workspace file: app.code-workspace, with 3 repos: api, libs/shared, web");
+  expect(t.output()).toContain("It looked for git repos up to 3 levels down, skipping hidden folders and node_modules.");
 });
 
 test("a repo isn't hidden when another repo has a folder at the same path: editors hide it in every root", async () => {
@@ -78,4 +79,32 @@ test('"without": ["workspace-file"] in the config leaves it out', async () => {
   writeFileSync(join(t.ctx.orcaDir, "config.json"), JSON.stringify({ without: ["workspace-file"] }));
   await start(t.ctx, dir, {});
   expect(existsSync(file(dir))).toBe(false);
+});
+
+test("the user's own file is left alone, saying once which repos it doesn't list and what it lists that's gone", async () => {
+  const t = fakeContext();
+  const dir = project(t.home, ["api", "web"]);
+  const own = '// mine\n{ "folders": [{ "path": "." }, { "path": "api" }, { "path": "old" }] }\n';
+  writeFileSync(file(dir), own);
+  await start(t.ctx, dir, {});
+  expect(readFileSync(file(dir), "utf8")).toBe(own);
+  expect(t.output()).toContain("app.code-workspace is yours (no orca mark), so it's left as it is; it doesn't list web, and lists old, which no longer exists.");
+
+  let before = t.lines.length;
+  await start(t.ctx, dir, {});
+  expect(t.lines.slice(before).join("\n")).not.toContain("Workspace file");
+
+  mkdirSync(join(dir, "docs/.git"), { recursive: true });
+  before = t.lines.length;
+  await start(t.ctx, dir, {});
+  expect(t.lines.slice(before).join("\n")).toContain("doesn't list docs, web");
+});
+
+test("a user's file that lists every repo says nothing", async () => {
+  const t = fakeContext();
+  const dir = project(t.home, ["api"]);
+  writeFileSync(file(dir), '{ "folders": [{ "path": "./api/" }, { "path": "notes" }] }\n');
+  mkdirSync(join(dir, "notes"));
+  await start(t.ctx, dir, {});
+  expect(t.output()).not.toContain("Workspace file");
 });

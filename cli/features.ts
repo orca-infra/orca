@@ -3,9 +3,9 @@
 //     and the workspace file, checked on every start
 //   at creation: done once, when orca creates a project's home; never repeated or overwritten
 // container-features.md lists these together with what the image adds, and is kept in step.
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { OrcaError, type Context } from "./context";
+import { OrcaError, projectsDir, type Context } from "./context";
 import { resourceArgs, type Resources } from "./box-settings";
 
 /** `network` is null when the project's own couldn't be set up: Docker's default then */
@@ -74,18 +74,24 @@ export async function applyCreation(ctx: Context, home: string, without: string[
 
 // The workspace file: editors search and index each git repo only when it's a root of its own
 const MARK = "// Made by orca start";
+/** Folders the repo search never looks in, besides hidden ones: what's in them isn't a repo to edit */
+export const SKIPPED = ["node_modules"];
+const DEPTH = 3;
+const RULES = `looked for git repos up to ${DEPTH} levels down, skipping hidden folders and ${SKIPPED.join(", ")}`;
 
 /**
  * Writes <project>.code-workspace in a folder that holds git repos below its top: a root for the
  * top (its own files) and one per repo, each hidden from the top's root. Rewritten when the repos
- * change, but only while its first line is orca's; without that line, it's the user's.
+ * change, but only while its first line is orca's; without that line, it's the user's, and orca
+ * says once when the repos it would list have changed.
  */
 export function workspaceFile(ctx: Context, name: string, folder: string, without: string[]) {
   if (without.includes("workspace-file")) return;
   const repos = findRepos(folder);
   const file = join(folder, `${name}.code-workspace`);
   const old = existsSync(file) ? readFileSync(file, "utf8") : null;
-  if (!repos.length || (old !== null && !old.startsWith(MARK))) return;
+  if (old !== null && !old.startsWith(MARK)) return noticeUsersFile(ctx, name, file, old, repos);
+  if (!repos.length) return;
   const workspace = {
     folders: [{ name, path: "." }, ...repos.map((path) => ({ path }))],
     // Editors apply this in every root: a repo another one has a folder at the same path as stays
@@ -99,12 +105,35 @@ ${JSON.stringify(workspace, null, 2)}
   if (text === old) return;
   writeFileSync(file, text);
   const n = `${repos.length} repo${repos.length === 1 ? "" : "s"}`;
-  ctx.print(`Workspace file: ${name}.code-workspace, ${old === null ? `with ${n}; open it in VS Code or Cursor` : `updated: ${n}`}`);
+  ctx.print(`Workspace file: ${name}.code-workspace, ${old === null ? `with ${n}` : `updated: ${n}`}: ${repos.join(", ")}`);
+  ctx.print(`  It ${RULES}.${old === null ? " Open it in VS Code or Cursor." : ""}`);
 }
 
-/** Git repos up to three levels below `top`, skipping node_modules and hidden folders. */
+/** The user's own workspace file: left as it is, saying once (per change) which repos it doesn't list, and which folders it lists that are gone. */
+function noticeUsersFile(ctx: Context, name: string, file: string, text: string, repos: string[]) {
+  let listed: string[];
+  try {
+    // JSON with comments: whole-line ones are all orca reads past; anything else, it can't tell
+    const w = JSON.parse(text.replace(/^\s*\/\/.*$/gm, "")) as { folders?: { path?: string }[] };
+    listed = (w.folders ?? []).map((f) => (f.path ?? "").replace(/^\.\//, "").replace(/\/$/, "")).filter((p) => p && p !== ".");
+  } catch {
+    return;
+  }
+  const missing = repos.filter((r) => !listed.includes(r));
+  const gone = listed.filter((p) => !existsSync(join(file, "..", p)));
+  const seen = join(projectsDir(ctx), name, "workspace-file-notice");
+  const now = JSON.stringify({ missing, gone });
+  if (!missing.length && !gone.length) return rmSync(seen, { force: true });
+  if (existsSync(seen) && readFileSync(seen, "utf8") === now) return;
+  writeFileSync(seen, now);
+  const parts = [missing.length && `doesn't list ${missing.join(", ")}`, gone.length && `lists ${gone.join(", ")}, which no longer exist${gone.length === 1 ? "s" : ""}`].filter(Boolean);
+  ctx.print(`Workspace file: ${name}.code-workspace is yours (no orca mark), so it's left as it is; it ${parts.join(", and ")}.`);
+  ctx.print(`  Edit it yourself, or delete it for orca to write one (orca ${RULES}).`);
+}
+
+/** Git repos up to DEPTH levels below `top`, skipping hidden folders and SKIPPED. */
 function findRepos(top: string, rel = "", depth = 1): string[] {
-  if (depth > 3) return [];
+  if (depth > DEPTH) return [];
   let entries;
   try {
     entries = readdirSync(join(top, rel), { withFileTypes: true });
@@ -112,7 +141,7 @@ function findRepos(top: string, rel = "", depth = 1): string[] {
     return [];
   }
   return entries
-    .filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules")
+    .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !SKIPPED.includes(e.name))
     .sort((a, b) => a.name.localeCompare(b.name))
     .flatMap((e) => {
       const path = rel ? `${rel}/${e.name}` : e.name;

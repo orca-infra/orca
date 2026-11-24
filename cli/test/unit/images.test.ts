@@ -176,8 +176,11 @@ test("fallback runs a command in place of a shell, also when going back into a k
   const folder = join(t.home, "dev/app");
   await fallback(t.ctx, folder, { kind: "fresh-home", command: ["test", "-f", "/workspace/x"] });
   expect(t.attached[0]).toEqual(["run", "-it", "--rm", "-v", `${folder}:/workspace`, "orca:latest", "test", "-f", "/workspace/x"]);
-  t.state.containers.push({ name: "orca-fallback-app", labels: {} });
+  // In a kept container the shell stays its main process, and the command runs beside it
+  await fallback(t.ctx, folder, { kind: "no-folders", command: ["true"] });
+  expect(t.calls).toContainEqual(["run", "-d", "-it", "--name", "orca-fallback-app", "orca:latest", "bash"]);
+  expect(t.attached[1]).toEqual(["exec", "-it", "orca-fallback-app", "true"]);
   await fallback(t.ctx, folder, { kind: "no-folders", command: ["true"] });
   expect(t.calls).toContainEqual(["start", "orca-fallback-app"]);
-  expect(t.attached[1]).toEqual(["exec", "-it", "orca-fallback-app", "true"]);
+  expect(t.attached[2]).toEqual(["exec", "-it", "orca-fallback-app", "true"]);
 });

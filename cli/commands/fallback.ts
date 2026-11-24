@@ -15,8 +15,9 @@ export type Kind = keyof typeof KINDS;
 
 /** The one place a fallback's docker command is made: run, and printed for pasting */
 export function fallbackArgs(f: { kind: Kind; folder: string; home: string | null; image: string; name: string; command?: string[] }): string[] {
+  // A kept container's main process is always a shell, so going back in opens it as it was left
+  if (f.kind === "no-folders") return ["run", "-it", "--name", f.name, f.image, "bash"];
   const command = f.command?.length ? f.command : ["bash"];
-  if (f.kind === "no-folders") return ["run", "-it", "--name", f.name, f.image, ...command];
   return ["run", "-it", "--rm", "-v", `${f.folder}:/workspace`, ...(f.kind === "home" ? ["-v", `${f.home}:/home/node`] : []), f.image, ...command];
 }
 
@@ -56,6 +57,11 @@ export async function fallback(ctx: Context, path: string, opts: { kind?: string
   if (kind === "fresh-home") ctx.print("A fresh home: log in to Claude and gh inside. It's thrown away when you exit; your folder isn't.");
   const args = fallbackArgs({ kind, folder, home, image: ref, name, command: opts.command });
   ctx.print(`Running (to paste if orca won't run): docker ${args.map(quote).join(" ")}`);
+  if (kind === "no-folders" && opts.command?.length) {
+    // Its shell keeps it going in the background; the command runs beside it
+    await docker(ctx, ["run", "-d", ...args.slice(1)]);
+    return ctx.docker.attach(["exec", "-it", name, ...opts.command]);
+  }
   return ctx.docker.attach(args);
 }
 

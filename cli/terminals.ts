@@ -1,7 +1,7 @@
 import { OrcaError } from "./errors";
 import { tilde, type Context } from "./context";
 import { hasTerminals } from "./compat";
-import { probe } from "./docker";
+import { dockerSaid, probe } from "./docker";
 import { type Container } from "./containers";
 import { IN_CONTAINER, ranOutput } from "./in-container";
 
@@ -53,7 +53,7 @@ export async function checkReady(ctx: Context, name: string, container: string, 
   const missing = mounted.filter((m) => lines?.includes(`missing ${m.target}`));
   const problem =
     !lines
-      ? `Docker couldn't run a command in it (${(r.stdout + r.stderr).trim().split("\n")[0] || `exit ${r.code}`})`
+      ? `Docker couldn't run a command in it (${dockerSaid(r).split("\n")[0]})`
       : missing.length
         ? `${missing.map((m) => `${m.target} (${tilde(ctx, m.source)} on this Mac)`).join(" and ")} ${missing.length === 1 ? "isn't" : "aren't"} there inside it`
         : null;

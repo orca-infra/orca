@@ -52,6 +52,8 @@ export type FakeState = {
   failing?: string[];
   /** Mac ports something else is listening on, so publishing them fails */
   taken?: number[];
+  /** Mac ports Docker can't publish although nothing on the Mac shows as listening (say, taken on another address) */
+  unpublishable?: number[];
   /** What Docker has in all (docker info); 16 GB and 10 CPUs unless set */
   total?: { memory: number; cpus: number };
 };
@@ -131,7 +133,7 @@ export function fakeDocker(state: FakeState) {
       if (cmd === "network") return network(rest);
       if ((cmd === "run" && rest[0] === "-d") || cmd === "create") {
         const flag = (f: string) => rest.flatMap((a, i) => (a === f ? [rest[i + 1]] : []));
-        const taken = flag("-p").map((p) => Number(p.split(":")[1])).find((p) => state.taken?.includes(p));
+        const taken = flag("-p").map((p) => Number(p.split(":")[1])).find((p) => state.taken?.includes(p) || state.unpublishable?.includes(p));
         if (taken) return fail(`Bind for 127.0.0.1:${taken} failed: port is already allocated`);
         // Like Docker: the image is the last argument, and the container gets its labels too
         const ref = rest[rest.length - 1];

@@ -12,7 +12,7 @@ export type Step<S> = {
   /** Only when this holds (unset: always) */
   when?: (s: S) => boolean;
   run: (s: S) => Promise<number | void> | number | void;
-} & ({ needed: true } | { optional: { failed: (s: S) => string; skipping: (s: S) => string } });
+} & ({ needed: true } | { optional: { failed: (s: S) => string; skipping: (s: S) => string; question?: (s: S) => string } });
 
 /** Runs the steps in order; the exit code of the step that ended it, or undefined. */
 export async function runSteps<S>(ctx: Context, steps: Step<S>[], s: S): Promise<number | undefined> {
@@ -23,7 +23,7 @@ export async function runSteps<S>(ctx: Context, steps: Step<S>[], s: S): Promise
       code = await step.run(s);
     } catch (e) {
       if ("needed" in step) throw e;
-      await goOnWithout(ctx, e, step.optional.failed(s), step.optional.skipping(s));
+      await goOnWithout(ctx, e, step.optional.failed(s), step.optional.skipping(s), step.optional.question?.(s) ?? "Go on without it?");
       continue;
     }
     if (typeof code === "number") return code;
@@ -32,12 +32,12 @@ export async function runSteps<S>(ctx: Context, steps: Step<S>[], s: S): Promise
 }
 
 /** Says what failed and what going on without it means, and asks; with no one to ask, or a no, the failure stands. */
-async function goOnWithout(ctx: Context, e: unknown, failed: string, skipping: string) {
+async function goOnWithout(ctx: Context, e: unknown, failed: string, skipping: string, question: string) {
   if (!ctx.ask) throw e;
   const detail = e instanceof Error ? e.message : String(e);
   const fix = e instanceof OrcaError && e.fix ? `\n  ${e.fix}` : "";
   ctx.print(`${failed}: ${detail}${fix}`);
   ctx.print(`  ${skipping}`);
-  if (!/^(y(es)?)?$/i.test((await ctx.ask("Go on without it? [Y/n] ")).trim())) throw e;
+  if (!/^(y(es)?)?$/i.test((await ctx.ask(`${question} [Y/n] `)).trim())) throw e;
   ctx.print();
 }

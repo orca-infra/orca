@@ -1,9 +1,8 @@
 import { basename } from "node:path";
 import { beforeHomes } from "./compat";
 import { type Context } from "./context";
-import { docker } from "./docker";
 import { homeDir, ownWorkspaceDir } from "./state";
-import { type Container, parseContainer } from "./containers";
+import { listContainers, type Container } from "./containers";
 import { migrated, readFolder, recordNames } from "./records";
 import { latestImage } from "./images";
 
@@ -69,9 +68,3 @@ export async function loadProjects(ctx: Context): Promise<Project[]> {
 }
 
 
-export async function listContainers(ctx: Context): Promise<Container[]> {
-  const ids = await docker(ctx, ["ps", "-a", "-q"]);
-  const list = ids.split("\n").filter(Boolean);
-  if (list.length === 0) return [];
-  return (JSON.parse(await docker(ctx, ["inspect", ...list])) as Parameters<typeof parseContainer>[0][]).map(parseContainer);
-}

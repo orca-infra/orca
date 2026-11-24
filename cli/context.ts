@@ -27,7 +27,7 @@ export type Context = {
   host: (argv: string[]) => Promise<Result>;
   /** A hostname's addresses, looked up on the Mac as a browser there would; none if it doesn't resolve */
   lookup: (hostname: string) => Promise<string[]>;
-  /** Whether a port on the Mac's 127.0.0.1 is free to publish */
+  /** Whether a port on the Mac's 127.0.0.1 is free to publish: false only when something listens on it */
   portFree: (port: number) => Promise<boolean>;
   /** The web, for what's published on GitHub (images, orca's builds) */
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
@@ -63,7 +63,9 @@ export function realContext(): Context {
     fetch: (url, init) => fetch(url, init),
     portFree: (port) =>
       new Promise((resolve) => {
-        const server = createServer().once("error", () => resolve(false));
+        // Only "in use" means taken: ports below 1024 refuse an unprivileged listener on macOS,
+        // yet Docker publishes them
+        const server = createServer().once("error", (e: NodeJS.ErrnoException) => resolve(e.code !== "EADDRINUSE"));
         server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
       }),
     lookup: async (hostname) => {

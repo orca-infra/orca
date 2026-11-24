@@ -48,10 +48,12 @@ export async function docker(ctx: Context, args: string[]): Promise<string> {
   const r = await ctx.docker.run(args);
   if (r.code === 0) return r.stdout;
   if (r.code === 127) throw new OrcaError("Docker isn't installed.", "Install Docker Desktop: https://docs.docker.com/desktop/");
-  if (!(await answers(ctx))) throw new OrcaError("Docker isn't running.", "Start Docker Desktop, then try again.");
-  // Docker says why on stderr, or for some failures (an exec it couldn't start) on stdout
-  throw new OrcaError(`docker ${args[0]} failed: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`}`);
+  if (!(await answers(ctx))) throw new OrcaError(`Docker isn't running (${dockerSaid(r).split("\n")[0]}).`, "Start Docker Desktop, then try again.");
+  throw new OrcaError(`docker ${args[0]} failed: ${dockerSaid(r)}`);
 }
+
+/** What Docker said about a failure: on stderr, or for some (an exec it couldn't start) on stdout. */
+export const dockerSaid = (r: Result) => r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`;
 
 /** Runs a docker command whose result is the answer to a question (is it there?); never throws. */
 export const probe = (ctx: Context, args: string[]): Promise<Result> => ctx.docker.run(args);

@@ -165,6 +165,7 @@ const STEPS: Step<Start>[] = [
     optional: {
       failed: (s) => `Box settings (${describeResources(effective(s.ctx, s.name))}) couldn't be applied`,
       skipping: (s) => `It would start with the memory and CPUs it has (${describeResources(s.existing!)}); the next orca start tries again.`,
+      question: (s) => `Start ${s.name} with those?`,
     },
     run: async (s) => {
       const resources = effective(s.ctx, s.name);

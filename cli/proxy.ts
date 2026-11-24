@@ -3,7 +3,7 @@ import { caddyfile, type Server } from "./caddyfile";
 import { readConfig } from "./config";
 import { OrcaError } from "./errors";
 import { tilde, type Context } from "./context";
-import { docker, probe } from "./docker";
+import { docker, dockerSaid, probe } from "./docker";
 import { IN_CONTAINER, ranOutput } from "./in-container";
 import { containerName, hostFor, label, LABELS, networkName, PROXY, PROXY_DATA, PROXY_IMAGE } from "./names";
 import { caFile, configFile, forwardsFile, proxyConfigFile, proxyDir } from "./state";
@@ -87,6 +87,15 @@ export async function pointsHere(ctx: Context, host: string): Promise<boolean> {
 export const trustCommand = (ctx: Context) =>
   process.platform === "darwin" ? `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${tilde(ctx, caFile(ctx))}` : null;
 
+/** Refuses, saying which and what to do, when a port the proxy publishes is taken on the Mac. */
+async function checkPortsFree(ctx: Context, port: number, ports: number[]) {
+  for (const p of [port, ...ports])
+    if (!(await ctx.portFree(p)))
+      throw p === port
+        ? new OrcaError(`Port ${port} on this Mac is already taken, so the forwards proxy can't start.`, `Choose another in ${tilde(ctx, configFile(ctx))}: {"proxyPort": ${port + 1}}`)
+        : new OrcaError(`Port ${p} on this Mac is already taken, so the forwards proxy can't serve addresses on it.`, "Stop what's using it, or use a URL with another port.");
+}
+
 /** Makes sure the project's own network exists. */
 export async function ensureNetwork(ctx: Context, project: string): Promise<string> {
   const name = networkName(project);
@@ -159,12 +168,8 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
   }
   const reload = proxy?.running ?? false;
   if (!proxy) {
-    // Published ports must be free on the Mac; checked first, so the error says which and why
-    for (const p of [port, ...ports])
-      if (!(await ctx.portFree(p)))
-        throw p === port
-          ? new OrcaError(`Port ${port} on this Mac is already taken, so the forwards proxy can't start.`, `Choose another in ${tilde(ctx, configFile(ctx))}: {"proxyPort": ${port + 1}}`)
-          : new OrcaError(`Port ${p} on this Mac is already taken, so the forwards proxy can't serve addresses on it.`, "Stop what's using it, or use a URL with another port.");
+    // Published ports must be free on the Mac: checked first, so the error says which and why
+    await checkPortsFree(ctx, port, ports);
     const r = await probe(ctx, [
       "run", "-d",
       "--name", PROXY,
@@ -180,7 +185,9 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
     ]);
     if (r.code !== 0) {
       await probe(ctx, ["rm", "-f", PROXY]);
-      throw new OrcaError(`The forwards proxy didn't start: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`}`);
+      // A port taken since the check (or that a check from here can't see) says so; anything else, Docker says
+      await checkPortsFree(ctx, port, ports);
+      throw new OrcaError(`The forwards proxy didn't start: ${dockerSaid(r)}`);
     }
     proxy = { name: PROXY, running: true, startedAt: 0, image: "", labels: {}, workspace: null, home: null, networks: [], memory: 0, cpus: 0 };
   } else if (!proxy.running) {

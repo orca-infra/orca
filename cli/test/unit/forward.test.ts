@@ -296,3 +296,9 @@ test("a proxy from before extra addresses is made again, with the certificate fo
   expect(t.calls).toContainEqual(["rm", "-f", PROXY]);
   expect(proxy(t)?.labels?.["orca.ports"]).toBe("");
 });
+
+test("a port Docker can't publish, though nothing shows on it, says what Docker said", async () => {
+  const t = fakeContext({ unpublishable: [7320] });
+  project(t);
+  await expect(forward(t.ctx, { project: "app", add: 3000 })).rejects.toMatchObject({ message: expect.stringContaining("The forwards proxy didn't start: Bind for 127.0.0.1:7320 failed") });
+});

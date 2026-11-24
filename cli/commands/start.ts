@@ -12,7 +12,7 @@ import { beforeHomes, checkSupported, hasTerminals, TERMINALS } from "../compat"
 import { activity, checkReady, describe, keepUp, listTerminals, nextName } from "../terminals";
 import { terminalArgs } from "../in-container";
 import { containerName, CURRENT_IMAGE, label, PROXY } from "../names";
-import { homeDir } from "../state";
+import { configFile, homeDir } from "../state";
 import { listContainers, type Container } from "../containers";
 import { claimRecord, migrated, recordFor } from "../records";
 import { runSteps, type Step } from "../steps";
@@ -224,6 +224,7 @@ export async function start(c: Context, path: string, opts: StartOptions): Promi
     throw new OrcaError(`${tilde(c, folder)} doesn't exist.`, "Pass a project folder, or create one with: orca new <name>");
   const name = recordFor(c, folder) ?? basename(folder);
   checkWithout(opts.without ?? [], "--without");
+  checkWithout(readConfig(c).without ?? [], `without in ${tilde(c, configFile(c))}`);
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))
     throw new OrcaError(`"${name}" can't be used as a project name: use letters, numbers, ".", "_" or "-".`, "Rename the folder, or create a project with: orca new <name>");
 

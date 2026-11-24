@@ -4,7 +4,6 @@ import { lookup } from "node:dns/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { realDocker, type Docker, type Result } from "./docker";
-import { show } from "./ui/show";
 
 /** One answer to a question asked with `choose`: what it shows, and what choosing it returns. */
 export type Option = { label: string; value: string };
@@ -44,7 +43,8 @@ export function realContext(): Context {
     home,
     print: (line = "") => console.log(line),
     ask: interactive ? (q) => Promise.resolve(prompt(q) ?? "") : null,
-    choose: interactive ? (q, options) => show(join(orcaDir, "orca.log"), "choose", { question: q, options }) : null,
+    // Set by the entry point, which has the terminal UI (ui/show.tsx), when there's a terminal
+    choose: null,
     color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR,
     launch: async (argv) => {
       const proc = Bun.spawn(argv, { stdio: ["ignore", "ignore", "pipe"] });

@@ -18,7 +18,8 @@ import { OrcaError } from "./errors";
 import { realContext } from "./context";
 import { optionalIds } from "./features";
 import { serve } from "./server/serve";
-import { drawView, VIEW_COMMAND } from "./ui/show";
+import { drawView, show, VIEW_COMMAND } from "./ui/show";
+import { uiLogFile } from "./state";
 import { projectAt } from "./records";
 
 const HELP = `orca: each project in its own container, with its own home
@@ -125,6 +126,8 @@ async function main(all: string[]): Promise<number> {
   }
 
   const ctx = realContext();
+  // Questions answered with the arrow keys, when there's a terminal to ask on
+  if (ctx.ask) ctx.choose = (question, options) => show(uiLogFile(ctx), "choose", { question, options });
   const [command, ...args] = positionals;
   const one = (what: string) => {
     if (args.length !== 1) throw new OrcaError(`orca ${command} takes one ${what}.`, `orca ${command} <${what}>`);

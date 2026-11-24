@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { OrcaError } from "./errors";
 import { tilde, type Context } from "./context";
-import { checkWithout } from "./features";
 import { configFile } from "./state";
 
 /** Orca's settings, in ~/.orca/config.json. Every key is optional. */
@@ -42,7 +41,6 @@ export function readConfig(ctx: Context): Config {
   if (config.without !== undefined) {
     if (!Array.isArray(config.without) || config.without.some((a) => typeof a !== "string"))
       throw new OrcaError(`without in ${tilde(ctx, file)} must be a list of feature names, e.g. ["git-identity"].`);
-    checkWithout(config.without, `without in ${tilde(ctx, file)}`);
   }
   return config;
 }

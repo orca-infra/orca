@@ -2,10 +2,13 @@
 // else, so they can't drift apart. (Docker's own names, like a volume's mount point, stay where used.)
 import { REPO } from "./release";
 
+/** What a project name may be: it names its container, network and folder in ~/.orca */
+export const PROJECT_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+
 export const containerName = (project: string) => `orca-${project}`;
 export const networkName = (project: string) => `orca-net-${project}`;
-/** The plain container orca fallback keeps when it has no Mac folders */
-export const fallbackName = (project: string) => `orca-fallback-${project}`;
+/** The plain container orca fallback keeps when it has no Mac folders: per project, or per folder outside one */
+export const fallbackName = (projectOrFolder: string) => `orca-fallback-${projectOrFolder.replace(/[^a-zA-Z0-9_.-]/g, "-")}`;
 
 export const PROXY = "orca-proxy";
 /** The volume holding the proxy's certificate authority, so its key never leaves Docker */

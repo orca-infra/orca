@@ -20,8 +20,8 @@ test("steps run in order, skipping those whose condition doesn't hold, and a num
   expect(code).toBe(7);
 });
 
-test("a needed step's failure stops them", async () => {
-  await expect(runSteps(fakeContext({}, ["y"]).ctx, [{ name: "a", needed: true, run: boom }], { ran: [] })).rejects.toThrow("boom");
+test("a needed step's failure stops them, saying which step when orca didn't foresee it", async () => {
+  await expect(runSteps(fakeContext({}, ["y"]).ctx, [{ name: "the network", needed: true, run: boom }], { ran: [] })).rejects.toThrow("the network: boom");
 });
 
 test("an optional step's failure says what failed and what going on means, and goes on with a yes", async () => {

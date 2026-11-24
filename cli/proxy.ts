@@ -104,6 +104,15 @@ export async function ensureNetwork(ctx: Context, project: string): Promise<stri
   return name;
 }
 
+/** Removes the project's own network, if it has one; the proxy leaves it first. */
+export async function removeNetwork(ctx: Context, project: string) {
+  const network = networkName(project);
+  if ((await probe(ctx, ["network", "inspect", network])).code !== 0) return;
+  const proxy = (await listContainers(ctx)).find((c) => c.name === PROXY);
+  if (proxy?.networks.includes(network)) await docker(ctx, ["network", "disconnect", network, PROXY]);
+  await docker(ctx, ["network", "rm", network]);
+}
+
 async function projectNetworks(ctx: Context): Promise<{ name: string; subnets: string[] }[]> {
   const names = (await docker(ctx, ["network", "ls", "--filter", `label=${LABELS.network}`, "--format", "{{.Name}}"])).split("\n").filter(Boolean);
   if (names.length === 0) return [];

@@ -16,8 +16,8 @@ export interface Docker {
 export const realDocker: Docker = {
   async run(args) {
     try {
-      // Detached from the terminal (its own session): orca serve runs these every few seconds,
-      // and a terminal titles its window after the program in front, so it flashed "docker"
+      // Detached from the terminal (its own session), so the terminal's title stays orca's: a
+      // terminal titles its window after the program in front, and orca serve runs these often
       const proc = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe", detached: true });
       const [stdout, stderr, code] = await Promise.all([
         new Response(proc.stdout).text(),
@@ -32,9 +32,8 @@ export const realDocker: Docker = {
   async attach(args) {
     const proc = Bun.spawn(["docker", ...args], { stdio: ["inherit", "inherit", "inherit"] });
     const code = await proc.exited;
-    // A tmux killed with its container can't undo what it turned on, so the Mac's terminal kept
-    // reporting the mouse into the shell as text: turn off mouse reporting and focus events,
-    // and show the cursor (all harmless when tmux already did)
+    // Resets the terminal modes tmux turns on (mouse reporting, focus events, a hidden cursor),
+    // which a tmux ended with its container can't turn off itself; harmless when it did
     if (process.stdout.isTTY) process.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?25h");
     return code;
   },

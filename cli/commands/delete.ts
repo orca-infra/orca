@@ -2,10 +2,10 @@ import { existsSync, lstatSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { OrcaError } from "../errors";
 import { tilde, type Context } from "../context";
-import { docker, probe } from "../docker";
+import { docker } from "../docker";
 import { loadProjects } from "../projects";
-import { allForwards, syncProxy } from "../proxy";
-import { networkName, PROXY } from "../names";
+import { allForwards, removeNetwork, syncProxy } from "../proxy";
+import { PROXY } from "../names";
 import { homeDir, ownWorkspaceDir, recordDir } from "../state";
 import { listContainers } from "../containers";
 
@@ -64,13 +64,8 @@ export async function del(ctx: Context, name: string, opts: DeleteOptions): Prom
     if (removeRecord) rmSync(record, { recursive: true, force: true });
     else if (readdirSync(record).length) ctx.print(`The code stays in ${tilde(ctx, ownWorkspaceDir(ctx, name))}; remove it yourself if you don't need it.`);
   }
-  // The project's network goes with its container; the proxy leaves it first
-  const network = networkName(name);
-  if (p.container && (await probe(ctx, ["network", "inspect", network])).code === 0) {
-    const proxy = (await listContainers(ctx)).find((c) => c.name === PROXY);
-    if (proxy?.networks.includes(network)) await docker(ctx, ["network", "disconnect", network, PROXY]);
-    await docker(ctx, ["network", "rm", network]);
-  }
+  // The project's network goes with its container
+  if (p.container) await removeNetwork(ctx, name);
   if (allForwards(ctx).length || (await listContainers(ctx)).some((c) => c.name === PROXY)) await syncProxy(ctx);
   ctx.print(`Deleted.`);
 }

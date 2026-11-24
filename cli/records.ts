@@ -10,6 +10,9 @@ import { homeDir, migratedFile, projectPathFile, projectsDir } from "./state";
 export const recordNames = (ctx: Context): string[] =>
   existsSync(projectsDir(ctx)) ? readdirSync(projectsDir(ctx), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name) : [];
 
+/** Whether a project's home has anything in it (a home made now is empty) */
+export const hasHome = (ctx: Context, name: string) => existsSync(homeDir(ctx, name)) && readdirSync(homeDir(ctx, name)).length > 0;
+
 /** The folder a project's record points at, or null if it doesn't say */
 export function readFolder(ctx: Context, name: string): string | null {
   const file = projectPathFile(ctx, name);

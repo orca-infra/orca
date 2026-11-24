@@ -1,6 +1,7 @@
 // Docker's containers, as orca sees them.
 import type { Context } from "./context";
 import { docker } from "./docker";
+import { HOME, WORKSPACE } from "./container-spec";
 
 /** What `docker inspect` says about a container, reduced to what Orca uses. */
 export type Container = {
@@ -37,8 +38,8 @@ export function parseContainer(c: Inspected): Container {
     startedAt: Number.isNaN(started) || started < 0 ? 0 : started,
     image: c.Image,
     labels: c.Config.Labels ?? {},
-    workspace: mount("/workspace"),
-    home: mount("/home/node"),
+    workspace: mount(WORKSPACE),
+    home: mount(HOME),
     networks: Object.keys(c.NetworkSettings?.Networks ?? {}),
     memory: c.HostConfig?.Memory ?? 0,
     cpus: (c.HostConfig?.NanoCpus ?? 0) / 1e9,

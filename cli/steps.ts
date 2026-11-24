@@ -5,7 +5,8 @@ import { OrcaError } from "./errors";
  * A step of a command, over the command's state `S`. Every step says whether the command needs
  * it: a needed step's failure stops the command; an optional one's is reported with what going
  * on without it means, and the user chooses. A step can't be added without saying which.
- * A step that returns a number ends the command with it (its exit code).
+ * A step that returns a number ends the command with it (its exit code). A needed step's failure
+ * that orca didn't foresee (not an OrcaError) is reported with the step's name.
  */
 export type Step<S> = {
   name: string;
@@ -22,7 +23,8 @@ export async function runSteps<S>(ctx: Context, steps: Step<S>[], s: S): Promise
     try {
       code = await step.run(s);
     } catch (e) {
-      if ("needed" in step) throw e;
+      // A failure orca didn't foresee still says where it happened (an optional step's message names it already)
+      if ("needed" in step) throw e instanceof OrcaError ? e : new OrcaError(`${step.name}: ${e instanceof Error ? e.message : String(e)}`);
       await goOnWithout(ctx, e, step.optional.failed(s), step.optional.skipping(s), step.optional.question?.(s) ?? "Go on without it?");
       continue;
     }

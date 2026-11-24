@@ -36,6 +36,9 @@ export const IN_CONTAINER = {
   proxyCa: script("proxy-ca", `cat ${CA_IN_PROXY}`),
 };
 
+/** docker arguments that run a command (or a shell) in a container, attached to this window */
+export const shellArgs = (container: string, command?: string[]) => ["exec", "-it", container, ...(command?.length ? command : ["bash"])];
+
 /** docker arguments that attach this window to the named terminal (tmux), creating it (running `command`) if needed. */
 export function terminalArgs(container: string, name: string, command?: string[]): string[] {
   // A terminal type every modern terminal handles, rather than the Mac's own, which the

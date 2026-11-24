@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { OrcaError } from "../errors";
 import { tilde, type Context } from "../context";
@@ -10,13 +10,13 @@ import { applyCreation, checkWithout } from "../creation";
 import { workspaceFile } from "../workspace-file";
 import { applySettings, describeResources, effective } from "../box-settings";
 import { allForwards, ensureNetwork, syncProxy } from "../proxy";
-import { beforeHomes, checkSupported, hasTerminals, TERMINALS } from "../compat";
+import { beforeHomes, checkSupported, hasTerminals, imageHasTerminals } from "../compat";
 import { activity, checkReady, describe, keepUp, listTerminals, nextName } from "../terminals";
-import { terminalArgs } from "../in-container";
-import { containerName, CURRENT_IMAGE, label, PROXY } from "../names";
+import { shellArgs, terminalArgs } from "../in-container";
+import { containerName, CURRENT_IMAGE, label, PROJECT_NAME, PROXY } from "../names";
 import { configFile, homeDir } from "../state";
 import { listContainers, type Container } from "../containers";
-import { claimRecord, migrated, recordFor } from "../records";
+import { claimRecord, hasHome, migrated, recordFor } from "../records";
 import { runSteps, type Step } from "../steps";
 
 export type StartOptions = {
@@ -80,7 +80,7 @@ const STEPS: Step<Start>[] = [
     name: "the project's record",
     needed: true,
     run: (s) => {
-      s.newHome = isEmpty(s.home);
+      s.newHome = !hasHome(s.ctx, s.name);
       claimRecord(s.ctx, s.name, s.folder);
     },
   },
@@ -97,10 +97,10 @@ const STEPS: Step<Start>[] = [
       if (!legacy || s.existing || migrated(s.ctx, s.name)) return;
       const c = s.ctx;
       throw new OrcaError(
-        isEmpty(s.home)
+        !hasHome(c, s.name)
           ? `${tilde(c, s.folder)} still has its container from before project homes, ${legacy.name}. Starting now would begin with an empty home.`
           : `${tilde(c, s.folder)}'s migration from ${legacy.name} didn't finish, so its home may be incomplete.`,
-        isEmpty(s.home)
+        !hasHome(c, s.name)
           ? `Migrate it first: ~/orca/orca-migrate.sh ${tilde(c, s.folder)}`
           : `Remove the partial copy and migrate again: rm -r ${tilde(c, s.home)} && ~/orca/orca-migrate.sh ${tilde(c, s.folder)}`,
       );
@@ -174,51 +174,51 @@ const STEPS: Step<Start>[] = [
     },
   },
   {
-    name: "opening the container it has",
+    name: "its container: the one it has, or a new one",
     needed: true,
-    when: reusing,
-    run: async (s) => {
-      const c = s.ctx;
-      if (!hasTerminals(s.existing!)) return plainShell(c, s.name, s.container, s.existing!.running, s.opts);
-      if (!s.existing!.running) {
-        c.print(`Starting ${s.name}`);
-        await docker(c, ["start", s.container]);
-      }
-      const box = { name: s.name, container: s.container, folder: s.folder };
-      return s.opts.up ? up(c, box) : openTerminal(c, box, s.opts);
-    },
-  },
-  {
-    name: "making its container",
-    needed: true,
-    run: async (s) => {
-      const c = s.ctx;
-      const latest = s.chosen?.image ?? (await latestImage(c));
-      if (!latest) throw new OrcaError("The orca image isn't on this Mac yet.", "Run: orca update");
-      c.print(`Creating ${s.name}: ${tilde(c, s.folder)}, home in ${tilde(c, s.home)}`);
-      if (s.newHome) await applyCreation(c, s.home, s.without);
-      const spec = containerArgs({ name: s.name, folder: s.folder, home: s.home, network: s.network, resources: effective(c, s.name) });
-      const create = ["--name", s.container, "--label", label("project", s.name), ...spec, s.chosen?.ref ?? CURRENT_IMAGE];
-      if (s.opts.makeOnly) {
-        await docker(c, ["create", ...create]);
-        c.print(`Made ${s.container} from the image built ${built(latest)}; orca start opens it.`);
-        return 0;
-      }
-      if (latest.generation < TERMINALS) {
-        // An image from before terminals: its main process is the first window's shell
-        c.print("This image has no terminals yet; for them: orca update, then orca start --fresh");
-        if (!s.opts.command) return attach(c, ["run", "-it", ...create, "bash"]);
-        await docker(c, ["run", "-d", "-it", ...create, "bash"]);
-        return attach(c, ["exec", "-it", s.container, ...s.opts.command]);
-      }
-      // The container runs in the background while any terminal is open, or until it's stopped
-      // if kept up (the image's orca-keepalive)
-      await docker(c, ["run", "-d", ...create]);
-      const box = { name: s.name, container: s.container, folder: s.folder };
-      return s.opts.up ? up(c, box) : openTerminal(c, box, s.opts);
-    },
+    run: (s) => (reusing(s) ? openExisting(s) : makeContainer(s)),
   },
 ];
+
+/** Opens the container the project has: a terminal in it, or kept up (orca up). */
+async function openExisting(s: Start): Promise<number> {
+  const c = s.ctx;
+  if (!hasTerminals(s.existing!)) return plainShell(c, s.name, s.container, s.existing!.running, s.opts);
+  if (!s.existing!.running) {
+    c.print(`Starting ${s.name}`);
+    await docker(c, ["start", s.container]);
+  }
+  const box = { name: s.name, container: s.container, folder: s.folder };
+  return s.opts.up ? up(c, box) : openTerminal(c, box, s.opts);
+}
+
+/** Makes the project's container, then opens it (or only makes it, with makeOnly). */
+async function makeContainer(s: Start): Promise<number> {
+  const c = s.ctx;
+  const latest = s.chosen?.image ?? (await latestImage(c));
+  if (!latest) throw new OrcaError("The orca image isn't on this Mac yet.", "Run: orca update");
+  c.print(`Creating ${s.name}: ${tilde(c, s.folder)}, home in ${tilde(c, s.home)}`);
+  if (s.newHome) await applyCreation(c, s.home, s.without);
+  const spec = containerArgs({ name: s.name, folder: s.folder, home: s.home, network: s.network, resources: effective(c, s.name) });
+  const create = ["--name", s.container, "--label", label("project", s.name), ...spec, s.chosen?.ref ?? CURRENT_IMAGE];
+  if (s.opts.makeOnly) {
+    await docker(c, ["create", ...create]);
+    c.print(`Made ${s.container} from the image built ${built(latest)}; orca start opens it.`);
+    return 0;
+  }
+  if (!imageHasTerminals(latest)) {
+    // An image from before terminals: its main process is the first window's shell
+    c.print("This image has no terminals yet; for them: orca update, then orca start --fresh");
+    if (!s.opts.command) return attach(c, ["run", "-it", ...create, "bash"]);
+    await docker(c, ["run", "-d", "-it", ...create, "bash"]);
+    return attach(c, shellArgs(s.container, s.opts.command));
+  }
+  // The container runs in the background while any terminal is open, or until it's stopped
+  // if kept up (the image's orca-keepalive)
+  await docker(c, ["run", "-d", ...create]);
+  const box = { name: s.name, container: s.container, folder: s.folder };
+  return s.opts.up ? up(c, box) : openTerminal(c, box, s.opts);
+}
 
 /** Starts (or enters) the container for the project folder at `path`; with `up`, keeps it running instead. */
 export async function start(c: Context, path: string, opts: StartOptions): Promise<number> {
@@ -228,7 +228,7 @@ export async function start(c: Context, path: string, opts: StartOptions): Promi
   const name = recordFor(c, folder) ?? basename(folder);
   checkWithout(opts.without ?? [], "--without");
   checkWithout(readConfig(c).without ?? [], `without in ${tilde(c, configFile(c))}`);
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))
+  if (!PROJECT_NAME.test(name))
     throw new OrcaError(`"${name}" can't be used as a project name: use letters, numbers, ".", "_" or "-".`, "Rename the folder, or create a project with: orca new <name>");
 
   const container = containerName(name);
@@ -293,19 +293,17 @@ async function plainShell(ctx: Context, name: string, container: string, running
   ctx.print(`${name}'s container is from before terminals, so its shells end with their window. For terminals: orca start --fresh`);
   if (opts.command) {
     if (!running) await docker(ctx, ["start", container]);
-    return attach(ctx, ["exec", "-it", container, ...opts.command]);
+    return attach(ctx, shellArgs(container, opts.command));
   }
   if (running) {
     ctx.print(`${name} is already running: opening another shell in it`);
-    return attach(ctx, ["exec", "-it", container, "bash"]);
+    return attach(ctx, shellArgs(container));
   }
   ctx.print(`Resuming ${name}`);
   return attach(ctx, ["start", "-ai", container]);
 }
 
 const count = (n: number) => `${n} terminal${n === 1 ? "" : "s"}`;
-
-const isEmpty = (dir: string) => !existsSync(dir) || readdirSync(dir).length === 0;
 
 /** What recreating a container on a newer image keeps, and what it resets. */
 export const RECREATING = ["Kept:  the project folder, ~ (logins, memory, settings, installed tools)", "Reset: everything else in the container, such as system packages"];

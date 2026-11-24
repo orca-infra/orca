@@ -47,7 +47,7 @@ export async function docker(ctx: Context, args: string[]): Promise<string> {
   const r = await ctx.docker.run(args);
   if (r.code === 0) return r.stdout;
   if (r.code === 127) throw new OrcaError("Docker isn't installed.", "Install Docker Desktop: https://docs.docker.com/desktop/");
-  if (!(await answers(ctx))) throw new OrcaError(`Docker isn't running (${dockerSaid(r).split("\n")[0]}).`, "Start Docker Desktop, then try again.");
+  if (!(await answers(ctx))) throw new OrcaError("Docker isn't running.", `Start Docker Desktop, then try again. (Docker said: ${dockerSaid(r).split("\n")[0]})`);
   throw new OrcaError(`docker ${args[0]} failed: ${dockerSaid(r)}`);
 }
 

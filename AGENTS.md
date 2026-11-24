@@ -9,8 +9,16 @@ This repo is the Orca agent framework — composable tools for AI-assisted softw
 - `.claude/skills/` — Claude Code skills; `install-orca` lists the ones installed into projects
 - `cli/` — the `orca` command (TypeScript, compiled with Bun) that runs on the Mac and manages project containers; `make help` lists its build and test tasks. `make check` runs every test that runs here (unit, React, browser); the Docker end-to-end tests (`cli/test/e2e/`) run in CI
 - Docker/bash infrastructure — `Dockerfile`, `orca-migrate.sh`, etc.
-- `container-features.md` — everything orca adds to a project's container (at creation, and every time); keep it in step when adding one
-- `cli/compat.ts` — support for containers made by older orca versions, by generation, and how to deprecate and remove one. A change that needs older containers handled differently raises the generation (the Dockerfile's `orca.generation` label) and adds an entry there
+- `container-features.md` — everything orca adds to a project's container (at creation, and every time); a test checks it names every feature and mount in the code
+
+## How `cli/` is built
+
+Each thing is done one way, in the module that owns it; `cli/test/unit/architecture.test.ts` enforces most of this, and a failure there means using the owner, not loosening the rule.
+
+- **Layers**: core (`cli/*.ts`) < `ui/` < `commands/` < `server/` < the entry point (`orca.ts`); a module imports only from its own layer or below, and nothing imports back around in a cycle. `web/` runs in the browser and takes only types from the rest.
+- **Owners**: Docker is called through `docker.ts` (`docker()` for what must succeed, `probe()` for questions, `attach()` for a terminal); every path under `~/.orca` comes from `state.ts`; every Docker name, label and image name from `names.ts`; every command run inside a container from `in-container.ts`.
+- **Lists of things are registries in code**, typed and tested, added to rather than branched around: a command's steps (`steps.ts`: each needed or optional, so fail-safe is the default), older containers by generation (`compat.ts`), creation features (`creation.ts`), plain-container kinds (`commands/fallback.ts`). A change that needs older containers handled differently raises the generation (the Dockerfile's `orca.generation` label) and adds an entry to `compat.ts`.
+- **Act on the state that's needed**, not on failures seen before: check what something needs and report what's missing, always with what actually went wrong. Docs describe what code holds; code never reads them, and a doc that repeats code has a test that keeps it the same.
 
 ## Framework / Installed Boundary
 

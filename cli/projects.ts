@@ -28,7 +28,6 @@ export type Project = {
 export const recordDir = (ctx: Context, name: string) => join(projectsDir(ctx), name);
 export const homeDir = (ctx: Context, name: string) => join(recordDir(ctx, name), "home");
 export const containerName = (name: string) => `orca-${name}`;
-export const volumeName = (container: string) => `${container}_node_modules`;
 
 export function readFolder(ctx: Context, name: string): string | null {
   const file = join(recordDir(ctx, name), "project-path");
@@ -107,7 +106,7 @@ export async function inspectImage(ctx: Context, ref: string): Promise<Image | n
 export const lostFoldersError = (container: string) =>
   new OrcaError(
     `${container} can't reach its folders from the Mac (/workspace and ~), so nothing in it can run. Docker's file sharing has stopped working for it; the files on the Mac are untouched.`,
-    "Restart Docker Desktop (docker desktop restart, or quit it from the menu bar and open it again), then orca start again. If that doesn't fix it, restart the Mac.",
+    "Restart Docker Desktop (quit it from its menu bar icon and open it again), then orca start again. To work meanwhile: https://github.com/orca-infra/orca/blob/main/FALLBACKS.md",
   );
 
 /** Runs a docker command that must succeed, turning the common failures into fixes. */

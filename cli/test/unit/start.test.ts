@@ -25,8 +25,6 @@ test("a new folder gets a record, and a container in the background with its fol
   expect(run.slice(0, 4)).toEqual(["run", "-d", "--name", "orca-app"]);
   expect(run).toContain("orca.project=app");
   expect(run).toContain(`${dir}:/workspace`);
-  // node_modules is the project folder's own, like everything else in it
-  expect(run.some((a) => a.includes("node_modules"))).toBe(false);
   expect(run).toContain(`${join(record, "home")}:/home/node`);
   expect(run).toContain("ORCA_PROJECT=app");
   // The image's own main process keeps it running while terminals are open
@@ -173,16 +171,6 @@ test("--fresh recreates a stopped container", async () => {
   await start(t.ctx, dir, { fresh: true });
   expect(t.calls).toContainEqual(["rm", "orca-app"]);
   expect(t.calls.filter((c) => c[0] === "run")).toHaveLength(1);
-  expect(t.output()).not.toContain("install dependencies again");
-});
-
-test("--fresh on a container from before node_modules moved removes its old volume", async () => {
-  const t = fakeContext({ volumes: ["orca-app_node_modules"] });
-  const dir = folder(t.home);
-  t.state.containers.push({ name: "orca-app", workspace: dir, home: join(t.ctx.orcaDir, "projects/app/home") });
-  await start(t.ctx, dir, { fresh: true });
-  expect(t.state.volumes).toHaveLength(0);
-  expect(t.output()).toContain("install dependencies again");
 });
 
 test("--fresh refuses while the container is running, saying what stopping it ends", async () => {
@@ -337,15 +325,31 @@ test("a container that lost its folders from the Mac says so, and how to recover
   expect(t.attached).toHaveLength(0);
 });
 
-test("a forwards proxy that can't take its new config doesn't keep a project from starting", async () => {
-  const t = fakeContext();
-  const other = folder(t.home, "web");
+function proxyBroken(answers: string[] = []) {
+  const t = fakeContext({}, answers);
   const record = join(t.ctx.orcaDir, "projects/web");
   mkdirSync(join(record, "home"), { recursive: true });
-  writeFileSync(join(record, "project-path"), other + "\n");
+  writeFileSync(join(record, "project-path"), folder(t.home, "web") + "\n");
   writeFileSync(join(record, "forwards"), "3000\n");
   t.state.containers.push({ name: "orca-proxy", running: true, labels: { "orca.proxy": "true", "orca.port": "7320", "orca.ports": "" }, networks: [], lostFolders: true });
+  return t;
+}
+
+test("a forwards proxy that fails says what failed and what skipping it means, and starts on a yes", async () => {
+  const t = proxyBroken([""]);
   await start(t.ctx, folder(t.home), {});
-  expect(t.output()).toContain("Forwards may not work");
+  expect(t.output()).toContain("The forwards proxy couldn't be brought up to date: orca-proxy can't reach its folders");
+  expect(t.output()).toContain("app itself is unaffected");
   expect(t.attached).toHaveLength(1);
+});
+
+test("a no to starting without the proxy stops with its error", async () => {
+  const t = proxyBroken(["n"]);
+  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ message: expect.stringContaining("orca-proxy can't reach its folders") });
+  expect(t.attached).toHaveLength(0);
+});
+
+test("with no one to ask, a failing proxy stops the start with its error", async () => {
+  const t = proxyBroken();
+  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({ fix: expect.stringContaining("Restart Docker Desktop") });
 });

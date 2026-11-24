@@ -12,7 +12,6 @@ import {
   readFolder,
   lostFoldersError,
   recordDir,
-  volumeName,
 } from "../projects";
 import { readConfig } from "../config";
 import { applyCreation, checkWithout, containerArgs, workspaceFile } from "../features";
@@ -77,11 +76,11 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   // The project's own network, which only the forwards proxy also joins
   const network = await ensureNetwork(ctx, name);
   if (existing && !opts.fresh && !existing.networks.includes(network)) await docker(ctx, ["network", "connect", network, container]);
-  // Forwards are an extra: a proxy that can't be brought in line never keeps a project from starting
   if (allForwards(ctx).length)
-    await syncProxy(ctx).catch((e: unknown) => {
-      const fix = e instanceof OrcaError && e.fix ? `\n  ${e.fix}` : "";
-      ctx.print(`Forwards may not work: ${e instanceof Error ? e.message : String(e)}${fix}\n  Starting ${name} anyway. The next orca start tries again; to start the proxy afresh: docker rm -f ${PROXY}\n`);
+    await skippable(ctx, () => syncProxy(ctx), {
+      failed: "The forwards proxy couldn't be brought up to date",
+      skipping: `Every project's forwards may not work until it is; ${name} itself is unaffected. To start the proxy afresh: docker rm -f ${PROXY}`,
+      question: `Start ${name} without it?`,
     });
 
   if (existing && opts.fresh) {
@@ -94,9 +93,6 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
     }
     ctx.print(`Removing ${container} to recreate it (--fresh)`);
     await docker(ctx, ["rm", container]);
-    // Containers made before node_modules moved into the project folder had a volume for it
-    if ((await ctx.docker.run(["volume", "rm", volumeName(container)])).code === 0)
-      ctx.print("  Its node_modules is now the project folder's: install dependencies again if they're missing.");
   } else if (existing) {
     await noticeOutdated(ctx, existing.image, folder, name);
     // Box settings changed since (orca settings, or new defaults) reach it without recreating it
@@ -135,6 +131,24 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   await docker(ctx, ["run", "-d", ...create]);
   const box = { name, container, folder, keepsUp: latest.up };
   return opts.up ? up(ctx, box) : openTerminal(ctx, box, opts);
+}
+
+/**
+ * Runs a step that starting can do without. If it fails, says what failed and what going on
+ * without it means, and asks; with no one to ask, or a no, the failure stands.
+ */
+async function skippable(ctx: Context, step: () => Promise<unknown>, say: { failed: string; skipping: string; question: string }) {
+  try {
+    await step();
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    const fix = e instanceof OrcaError && e.fix ? `\n  ${e.fix}` : "";
+    if (!ctx.ask) throw e;
+    ctx.print(`${say.failed}: ${detail}${fix}`);
+    ctx.print(`  ${say.skipping}`);
+    if (!/^(y(es)?)?$/i.test((await ctx.ask(`${say.question} [Y/n] `)).trim())) throw e;
+    ctx.print();
+  }
 }
 
 type Started = { name: string; container: string; folder: string; keepsUp: boolean };

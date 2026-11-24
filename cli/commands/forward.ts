@@ -1,11 +1,12 @@
 import { readConfig } from "../config";
 import { OrcaError } from "../errors";
 import { tilde, type Context } from "../context";
-import { allForwards, innerPort, parseAddress, pointsHere, readForwards, syncProxy, trustCommand, urlFor, writeForwards, type Address, type Forward } from "../proxy";
+import { syncProxy, trustCommand } from "../proxy";
 import { containerName } from "../names";
 import { caFile } from "../state";
 import { listContainers } from "../containers";
 import { recordNames } from "../records";
+import { type Address, allForwards, type Forward, innerPort, parseAddress, pointsHere, readForwards, urlFor, writeForwards } from "../forwards";
 
 /** `url` adds an address for the port being added; `remove` is a port (the whole forward) or one address. */
 export type ForwardOptions = { project: string; add?: number; url?: string; remove?: number | string };

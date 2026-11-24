@@ -9,7 +9,7 @@ import { containerArgs, mounts } from "../container-spec";
 import { applyCreation, checkWithout } from "../creation";
 import { workspaceFile } from "../workspace-file";
 import { applySettings, describeResources, effective } from "../box-settings";
-import { allForwards, ensureNetwork, syncProxy } from "../proxy";
+import { ensureNetwork, syncProxy } from "../proxy";
 import { beforeHomes, checkSupported, hasTerminals, imageHasTerminals } from "../compat";
 import { activity, checkReady, describe, keepUp, listTerminals, nextName } from "../terminals";
 import { shellArgs, terminalArgs } from "../in-container";
@@ -18,6 +18,7 @@ import { configFile, homeDir } from "../state";
 import { listContainers, type Container } from "../containers";
 import { claimRecord, hasHome, migrated, recordFor } from "../records";
 import { runSteps, type Step } from "../steps";
+import { allForwards } from "../forwards";
 
 export type StartOptions = {
   fresh?: boolean;

@@ -251,10 +251,17 @@ export function fakeContext(state: Partial<FakeState> = {}, answers: (string | n
     orcaDir: join(home, ".orca"),
     home,
     print: (line = "") => lines.push(line),
-    ask: answers.length ? async () => answers.shift() ?? "" : null,
+    // A question with no answer scripted fails the test, rather than counting as a yes
+    ask: answers.length
+      ? async (question) => {
+          if (!answers.length) throw new Error(`fake: no answer scripted for "${question}"`);
+          return answers.shift()!;
+        }
+      : null,
     choose: answers.length
       ? async (question, options) => {
           lines.push(question, ...options.map((o) => `  ${o.label}`));
+          if (!answers.length) throw new Error(`fake: no answer scripted for "${question}"`);
           const answer = answers.shift() ?? null;
           return options.some((o) => o.value === answer) ? answer : null;
         }

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { OrcaError } from "../../errors";
 import { runSteps, type Step } from "../../steps";
 import { fakeContext } from "../support/fake";
 
@@ -31,6 +32,15 @@ test("an optional step's failure says what failed and what going on means, and g
   expect(t.output()).toContain("net failed: boom");
   expect(t.output()).toContain("without net");
   expect(s.ran).toEqual(["after"]);
+});
+
+test("an optional step's failure shows the fix it came with", async () => {
+  const t = fakeContext({}, [""]);
+  const failing = () => {
+    throw new OrcaError("the network is gone", "Run: docker network prune");
+  };
+  await runSteps(t.ctx, [optional("net", failing)], { ran: [] });
+  expect(t.output()).toContain("net failed: the network is gone\n  Run: docker network prune");
 });
 
 test("an optional step's failure stands on a no, or with no one to ask", async () => {

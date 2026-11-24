@@ -1,4 +1,5 @@
 import type { Context } from "./context";
+import { hasTerminals } from "./compat";
 import { execFailed, lostFolders, type Container } from "./docker";
 
 /**
@@ -16,12 +17,6 @@ export type Terminal = {
   /** The title the program running in it set (Claude sets the conversation's), if any */
   title: string | null;
 };
-
-/** Containers made from images before terminals open plain shells instead. */
-export const hasTerminals = (c: Container) => c.labels["orca.terminals"] === "1";
-
-/** Containers whose image can be kept up (`orca up`); older ones stop a minute after their last terminal. */
-export const canKeepUp = (c: Container) => c.labels["orca.up"] === "1";
 
 /**
  * What keeps a running container up: its open terminals, and whether `orca up` marked it.

@@ -11,7 +11,8 @@ import { dockerTotal, effective, memoryUsed, readBoxSettings, type BoxSettings, 
 import { allForwards, caFile, parseAddress, pointsHere, proxyState, trustCommand, urlFor } from "../proxy";
 import { listSessions, type Session } from "../sessions";
 import { openInTerminal } from "../terminal";
-import { activities, activity, canKeepUp, hasTerminals, listTerminals, type Activity, type Terminal } from "../terminals";
+import { canKeepUp, hasTerminals } from "../compat";
+import { activities, activity, listTerminals, type Activity, type Terminal } from "../terminals";
 
 /** What the dashboard shows for a project. */
 export type ProjectView = {

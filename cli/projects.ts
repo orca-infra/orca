@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { beforeHomes, labelGeneration } from "./compat";
 import { readConfig } from "./config";
 import { OrcaError, projectsDir, type Context } from "./context";
 import { lostFolders, parseContainer, type Container } from "./docker";
@@ -47,7 +48,7 @@ export async function loadProjects(ctx: Context): Promise<Project[]> {
     const folder = readFolder(ctx, name);
     const home = homeDir(ctx, name);
     const container = containers.find((c) => c.home === home) ?? null;
-    const old = containers.find((c) => !c.home && c.workspace !== null && c.workspace === folder) ?? null;
+    const old = containers.find((c) => beforeHomes(c) && c.workspace !== null && c.workspace === folder) ?? null;
     const legacy = old && !container && !migrated(ctx, name) ? old : null;
     return {
       name,
@@ -63,7 +64,7 @@ export async function loadProjects(ctx: Context): Promise<Project[]> {
   // recently used). Named after the folder, or the container when that name is taken, since
   // names identify projects everywhere.
   const unrecorded = containers
-    .filter((c) => !c.home && c.workspace)
+    .filter((c) => beforeHomes(c) && c.workspace)
     .sort((a, b) => b.startedAt - a.startedAt);
   for (const c of unrecorded) {
     if (projects.some((p) => p.folder === c.workspace)) continue;
@@ -88,8 +89,8 @@ export async function listContainers(ctx: Context): Promise<Container[]> {
   return (JSON.parse(await docker(ctx, ["inspect", ...list])) as Parameters<typeof parseContainer>[0][]).map(parseContainer);
 }
 
-/** `terminals`, `up`: made from a Dockerfile with orca's terminals, and with orca up (its labels) */
-export type Image = { id: string; created: string; terminals: boolean; up: boolean };
+/** `generation`: which orca made it (compat.ts) */
+export type Image = { id: string; created: string; generation: number };
 
 /** The image new containers are made from: orca:latest, unless config.json pins another */
 export const imageName = (ctx: Context) => readConfig(ctx).image ?? "orca:latest";
@@ -103,7 +104,7 @@ export async function inspectImage(ctx: Context, ref: string): Promise<Image | n
   if (r.code !== 0) return null;
   const [img] = JSON.parse(r.stdout) as { Id: string; Created: string; Config?: { Labels?: Record<string, string> | null } }[];
   const labels = img.Config?.Labels ?? {};
-  return { id: img.Id, created: img.Created, terminals: labels["orca.terminals"] === "1", up: labels["orca.up"] === "1" };
+  return { id: img.Id, created: img.Created, generation: labelGeneration(labels) };
 }
 
 /** A container that can't see its folders from the Mac; the files there are untouched. */

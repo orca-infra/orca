@@ -127,10 +127,13 @@ export function fakeDocker(state: FakeState) {
         const flag = (f: string) => rest.flatMap((a, i) => (a === f ? [rest[i + 1]] : []));
         const taken = flag("-p").map((p) => Number(p.split(":")[1])).find((p) => state.taken?.includes(p));
         if (taken) return fail(`Bind for 127.0.0.1:${taken} failed: port is already allocated`);
-        // Like Docker, the container gets the image's labels too
-        const labels = { ...imageLabels(state.latest!), ...Object.fromEntries(flag("--label").map((l) => l.split("=") as [string, string])) };
+        // Like Docker: the image is the last argument, and the container gets its labels too
+        const ref = rest[rest.length - 1];
+        const image = ref === "orca:latest" ? state.latest! : (state.tags?.[ref] ?? ref);
+        const labels = { ...imageLabels(image), ...Object.fromEntries(flag("--label").map((l) => l.split("=") as [string, string])) };
         const limit = (f: string) => rest.find((a) => a.startsWith(`${f}=`))?.slice(f.length + 1);
-        state.containers.push({ name: flag("--name")[0], running: true, image: state.latest!, labels, networks: [], memory: Number(limit("--memory")), cpus: Number(limit("--cpus")) });
+        const mount = (dest: string) => flag("-v").find((v) => v.endsWith(`:${dest}`))?.slice(0, -dest.length - 1);
+        state.containers.push({ name: flag("--name")[0], running: true, image, labels, networks: [], memory: Number(limit("--memory")), cpus: Number(limit("--cpus")), workspace: mount("/workspace"), home: mount("/home/node") });
         return ok("id");
       }
       if (cmd === "update") {

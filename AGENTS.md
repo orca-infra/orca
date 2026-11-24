@@ -10,6 +10,7 @@ This repo is the Orca agent framework — composable tools for AI-assisted softw
 - `cli/` — the `orca` command (TypeScript, compiled with Bun) that runs on the Mac and manages project containers; `make help` lists its build and test tasks. `make check` runs every test that runs here (unit, React, browser); the Docker end-to-end tests (`cli/test/e2e/`) run in CI
 - Docker/bash infrastructure — `Dockerfile`, `orca-migrate.sh`, etc.
 - `container-features.md` — everything orca adds to a project's container (at creation, and every time); keep it in step when adding one
+- `cli/compat.ts` — support for containers made by older orca versions, by generation, and how to deprecate and remove one. A change that needs older containers handled differently raises the generation (the Dockerfile's `orca.generation` label) and adds an entry there
 
 ## Framework / Installed Boundary
 

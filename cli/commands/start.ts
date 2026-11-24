@@ -18,7 +18,8 @@ import { readConfig } from "../config";
 import { applyCreation, checkWithout, containerArgs, workspaceFile } from "../features";
 import { applySettings, describeResources, effective } from "../box-settings";
 import { allForwards, ensureNetwork, PROXY, syncProxy } from "../proxy";
-import { activity, canKeepUp, describe, hasTerminals, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
+import { beforeHomes, canKeepUp, checkSupported, hasTerminals, TERMINALS, UP } from "../compat";
+import { activity, describe, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
 
 export type StartOptions = {
   fresh?: boolean;
@@ -59,7 +60,7 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   claimRecord(ctx, name, folder);
   workspaceFile(ctx, name, folder, without);
 
-  const legacy = containers.find((c) => !c.home && c.workspace === folder);
+  const legacy = containers.find((c) => beforeHomes(c) && c.workspace === folder);
   if (legacy && !existing && !migrated(ctx, name))
     throw new OrcaError(
       isEmpty(home)
@@ -109,6 +110,7 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
     ctx.print(`Removing ${container} to recreate it (--fresh)`);
     await docker(ctx, ["rm", container]);
   } else if (existing) {
+    checkSupported(ctx, existing, `orca stop ${name}, then orca start --fresh ${tilde(ctx, folder)}`);
     await noticeOutdated(ctx, existing.image, folder, name);
     // Box settings changed since (orca settings, or new defaults) reach it without recreating it
     const resources = effective(ctx, name);
@@ -137,11 +139,11 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
     throw readConfig(ctx).image
       ? new OrcaError(`The image config.json pins, ${imageName(ctx)}, isn't on this Mac.`, `Download it: docker pull ${imageName(ctx)}, or remove "image" from ${tilde(ctx, join(ctx.orcaDir, "config.json"))}`)
       : new OrcaError("The orca image isn't on this Mac yet.", "Run: orca update");
-  if (opts.up && !latest.up) throw new OrcaError("The orca image is from before orca up.", "Run: orca update");
+  if (opts.up && latest.generation < UP) throw new OrcaError("The orca image is from before orca up.", "Run: orca update");
   ctx.print(`Creating ${name}: ${tilde(ctx, folder)}, home in ${tilde(ctx, home)}`);
   if (newHome) await applyCreation(ctx, home, without);
   const create = ["--name", container, "--label", `orca.project=${name}`, ...containerArgs({ name, folder, home, network, resources: effective(ctx, name) }), imageName(ctx)];
-  if (!latest.terminals) {
+  if (latest.generation < TERMINALS) {
     // An image from before terminals: its main process is the first window's shell
     ctx.print("This image has no terminals yet; for them: orca update, then orca start --fresh");
     if (!opts.command) return ctx.docker.attach(["run", "-it", ...create, "bash"]);
@@ -151,7 +153,7 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   // The container runs in the background while any terminal is open, or until it's stopped
   // if kept up (the image's orca-keepalive)
   await docker(ctx, ["run", "-d", ...create]);
-  const box = { name, container, folder, keepsUp: latest.up };
+  const box = { name, container, folder, keepsUp: latest.generation >= UP };
   return opts.up ? up(ctx, box) : openTerminal(ctx, box, opts);
 }
 

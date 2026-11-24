@@ -10,6 +10,9 @@ const script = (name: string, body: string, ...params: string[]): InContainer =>
   args: ["sh", "-c", `echo 'orca-ran ${name}'; ${body}`, ...(params.length ? ["sh", ...params] : [])],
 });
 
+/** docker arguments that run one of these in a container */
+export const execIn = (container: string, c: InContainer) => ["exec", container, ...c.args];
+
 /** The output after its first line, or null when it didn't run (what's there is someone else's) */
 export function ranOutput(c: InContainer, stdout: string): string[] | null {
   const [first, ...rest] = stdout.split("\n").filter(Boolean);

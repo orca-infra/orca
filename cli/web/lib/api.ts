@@ -30,7 +30,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 const LIVE = { refetchInterval: 3000 };
 
-export const useInfo = () => useQuery({ queryKey: ["info"], queryFn: () => request<{ version: string; proxy: ProxyState; ca: CertificateAuthority }>("GET", "/api/info"), ...LIVE });
+export const useInfo = () => useQuery({ queryKey: ["info"], queryFn: () => request<{ version: string; proxy: ProxyState; ca: CertificateAuthority; newProjectFolder: string }>("GET", "/api/info"), ...LIVE });
 export const useProjects = () => useQuery({ queryKey: ["projects"], queryFn: () => request<ProjectView[]>("GET", "/api/projects"), ...LIVE });
 export const useProject = (name: string) =>
   useQuery({ queryKey: ["projects", name], queryFn: () => request<ProjectDetail>("GET", `/api/projects/${encodeURIComponent(name)}`), ...LIVE });

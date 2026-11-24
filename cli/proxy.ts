@@ -4,7 +4,7 @@ import { readConfig } from "./config";
 import { OrcaError } from "./errors";
 import { tilde, type Context } from "./context";
 import { docker, dockerSaid, probe } from "./docker";
-import { IN_CONTAINER, ranOutput } from "./in-container";
+import { execIn, IN_CONTAINER, ranOutput } from "./in-container";
 import { containerName, hostFor, label, LABELS, networkName, PROXY, PROXY_DATA, PROXY_IMAGE } from "./names";
 import { caFile, configFile, proxyConfigFile, proxyDir } from "./state";
 import { listContainers } from "./containers";
@@ -58,7 +58,7 @@ async function projectNetworks(ctx: Context): Promise<{ name: string; subnets: s
 /** Copies the authority's certificate out of the proxy, waiting the moment Caddy takes to make it the first time. */
 async function copyCa(ctx: Context) {
   for (let i = 0; i < 20; i++) {
-    const r = await probe(ctx, ["exec", PROXY, ...IN_CONTAINER.proxyCa.args]);
+    const r = await probe(ctx, execIn(PROXY, IN_CONTAINER.proxyCa));
     const cert = r.code === 0 ? (ranOutput(IN_CONTAINER.proxyCa, r.stdout)?.join("\n") ?? "") + "\n" : "";
     if (cert.includes("BEGIN CERTIFICATE")) {
       const file = caFile(ctx);
@@ -143,7 +143,7 @@ export async function syncProxy(ctx: Context): Promise<ProxyState> {
   // A reload is handed the config by orca, so it doesn't depend on reading it through a folder
   // shared from the Mac
   if (reload)
-    await docker(ctx, ["exec", PROXY, ...IN_CONTAINER.proxyReload(config).args]);
+    await docker(ctx, execIn(PROXY, IN_CONTAINER.proxyReload(config)));
   if (forwards.some((f) => f.urls.some((u) => parseAddress(u).https))) await copyCa(ctx);
   return { port, ports, running: true };
 }

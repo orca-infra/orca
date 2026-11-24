@@ -15,7 +15,7 @@ import { openInTerminal } from "../terminal";
 import { hasTerminals } from "../compat";
 import { activities, activity, listTerminals, type Activity, type Terminal } from "../terminals";
 import { inspectImage, latestImage } from "../images";
-import { caFile } from "../state";
+import { caFile, ownWorkspaceDir } from "../state";
 import { allForwards, parseAddress, pointsHere, urlFor } from "../forwards";
 
 /** What the dashboard shows for a project. */
@@ -63,7 +63,13 @@ export function createApi(ctx: Context, opts: { orca: string; version: string })
 
   async function route(method: string, [what, name, action, arg]: string[], req: Request): Promise<unknown> {
     if (method === "GET" && what === "info")
-      return { version: opts.version, proxy: await proxyState(ctx), ca: { file: tilde(ctx, caFile(ctx)), trust: trustCommand(ctx) } satisfies CertificateAuthority };
+      return {
+        version: opts.version,
+        proxy: await proxyState(ctx),
+        ca: { file: tilde(ctx, caFile(ctx)), trust: trustCommand(ctx) } satisfies CertificateAuthority,
+        // Where a new project's code goes, with <name> for its name
+        newProjectFolder: tilde(ctx, ownWorkspaceDir(ctx, "<name>")),
+      };
     if (method === "GET" && what === "sessions")
       return (await loadProjects(ctx)).flatMap((p) => listSessions(ctx, p.name)).sort((a, b) => b.updated - a.updated).slice(0, 200);
     if (what !== "projects") throw new NotFound("No such API.");

@@ -3,7 +3,7 @@ import { tilde, type Context } from "./context";
 import { hasTerminals } from "./compat";
 import { dockerSaid, probe } from "./docker";
 import { type Container } from "./containers";
-import { IN_CONTAINER, ranOutput } from "./in-container";
+import { execIn, IN_CONTAINER, ranOutput } from "./in-container";
 
 /**
  * A terminal in a project's container: a tmux session, so it keeps running when its window
@@ -26,7 +26,7 @@ export type Activity = { terminals: Terminal[]; up: boolean };
 
 /** A running container's activity (no terminals when tmux has no server yet). */
 export async function activity(ctx: Context, container: string): Promise<Activity> {
-  const r = await probe(ctx, ["exec", container, ...IN_CONTAINER.activity.args]);
+  const r = await probe(ctx, execIn(container, IN_CONTAINER.activity));
   const lines = ranOutput(IN_CONTAINER.activity, r.stdout);
   // Anything else on stdout (Docker's own message, when it couldn't run the command) isn't terminals
   if (!lines) return { terminals: [], up: false };
@@ -48,7 +48,7 @@ export async function activity(ctx: Context, container: string): Promise<Activit
  */
 export async function checkReady(ctx: Context, name: string, container: string, mounted: { source: string; target: string }[]) {
   const check = IN_CONTAINER.ready(mounted.map((m) => m.target));
-  const r = await probe(ctx, ["exec", container, ...check.args]);
+  const r = await probe(ctx, execIn(container, check));
   const lines = ranOutput(check, r.stdout);
   const missing = mounted.filter((m) => lines?.includes(`missing ${m.target}`));
   const problem =
@@ -69,7 +69,7 @@ export const listTerminals = async (ctx: Context, container: string) => (await a
 
 /** Marks a running container to keep running until it's stopped; false if it has nowhere to. */
 export async function keepUp(ctx: Context, container: string): Promise<boolean> {
-  return (await probe(ctx, ["exec", container, ...IN_CONTAINER.keepUp.args])).code === 0;
+  return (await probe(ctx, execIn(container, IN_CONTAINER.keepUp))).code === 0;
 }
 
 /** Each running project's activity, by project name. */

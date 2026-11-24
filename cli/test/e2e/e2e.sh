@@ -53,7 +53,6 @@ projects() {
   [ "$(mount_of orca-demo /workspace)" = "$T/dev/demo" ] || fail "workspace mount"
   [ "$(mount_of orca-demo /home/node)" = "$ORCA_DIR/projects/demo/home" ] || fail "home mount"
   [ "$(docker inspect -f '{{index .Config.Labels "orca.project"}}' orca-demo)" = demo ] || fail "label"
-  [ "$(mount_of orca-demo /workspace/node_modules)" = "" ] || fail "node_modules is part of the project folder"
   grep -q '"path": "api"' dev/demo/demo.code-workspace || fail "the workspace file should have the api repo"
 
   step "list --json agrees with Docker (what the unit tests' fake Docker assumes)"

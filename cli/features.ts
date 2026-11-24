@@ -101,7 +101,7 @@ ${JSON.stringify(workspace, null, 2)}
   ctx.print(`Workspace file: ${name}.code-workspace, ${old === null ? `with ${n}; open it in VS Code or Cursor` : `updated: ${n}`}`);
 }
 
-/** Git repos up to three levels below `top`, skipping node_modules and hidden folders. */
+/** Git repos up to three levels below `top`, skipping hidden folders. */
 function findRepos(top: string, rel = "", depth = 1): string[] {
   if (depth > 3) return [];
   let entries;
@@ -111,7 +111,7 @@ function findRepos(top: string, rel = "", depth = 1): string[] {
     return [];
   }
   return entries
-    .filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules")
+    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
     .sort((a, b) => a.name.localeCompare(b.name))
     .flatMap((e) => {
       const path = rel ? `${rel}/${e.name}` : e.name;

@@ -42,9 +42,9 @@ test("a single repo, or a folder without repos, gets none", async () => {
   expect(t.output()).not.toContain("Workspace file");
 });
 
-test("node_modules, hidden folders, and repos too deep are skipped", async () => {
+test("hidden folders and repos too deep are skipped", async () => {
   const t = fakeContext();
-  const dir = project(t.home, ["api", "node_modules/dep", ".cache/thing", "a/b/c/d"]);
+  const dir = project(t.home, ["api", ".cache/thing", "a/b/c/d"]);
   await start(t.ctx, dir, {});
   expect(parse(dir).folders.map((f: { path: string }) => f.path)).toEqual([".", "api"]);
 });

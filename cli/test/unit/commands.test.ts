@@ -43,21 +43,19 @@ test("new refuses a name Docker can't use", async () => {
 // ── delete ──────────────────────────────────────────────────────────────────────────────
 
 function withContainer(answers: string[] = ["app"]) {
-  const t = fakeContext({ volumes: ["orca-app_node_modules"] }, answers);
+  const t = fakeContext({}, answers);
   const dir = record(t.ctx.orcaDir, "app", "/Users/me/dev/app");
   t.state.containers.push({ name: "orca-app", workspace: "/Users/me/dev/app", home: join(dir, "home") });
   return { ...t, dir };
 }
 
-test("delete removes the container and its node_modules, keeps the home, after typing the name", async () => {
+test("delete removes the container, keeps the home, after typing the name", async () => {
   const t = withContainer();
   await del(t.ctx, "app", {});
   expect(t.state.containers).toHaveLength(0);
-  expect(t.state.volumes).toHaveLength(0);
   expect(existsSync(join(t.dir, "home"))).toBe(true);
   const out = t.output();
   expect(out).toContain("orca-app");
-  expect(out).toContain("orca-app_node_modules");
   expect(out).toMatch(/Kept:.*home/);
   expect(out).toContain("/Users/me/dev/app");
 });

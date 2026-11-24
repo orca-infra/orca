@@ -1,14 +1,13 @@
 import { existsSync, lstatSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { OrcaError, tilde, type Context } from "../context";
-import { docker, homeDir, listContainers, loadProjects, recordDir, volumeName } from "../projects";
+import { docker, homeDir, listContainers, loadProjects, recordDir } from "../projects";
 import { allForwards, networkName, PROXY, syncProxy } from "../proxy";
 
 export type DeleteOptions = { home?: boolean; yes?: boolean };
 
 /**
- * Removes a project's container (and the node_modules volume older containers had); with
- * --home, also its home.
+ * Removes a project's container; with --home, also its home.
  * Never touches the project's code.
  */
 export async function del(ctx: Context, name: string, opts: DeleteOptions): Promise<void> {
@@ -24,8 +23,6 @@ export async function del(ctx: Context, name: string, opts: DeleteOptions): Prom
   if (p.container?.running)
     throw new OrcaError(`${p.container.name} is running.`, `Stop it first (this ends every terminal in it): orca stop ${name}`);
 
-  const volume = p.container ? volumeName(p.container.name) : null;
-  const hasVolume = volume !== null && (await ctx.docker.run(["volume", "inspect", volume])).code === 0;
   const home = homeDir(ctx, name);
   const removeHome = Boolean(opts.home) && existsSync(home);
   const record = recordDir(ctx, name);
@@ -35,7 +32,6 @@ export async function del(ctx: Context, name: string, opts: DeleteOptions): Prom
 
   const removing = [
     p.container && `container ${p.container.name}`,
-    hasVolume && `its node_modules volume, ${volume}`,
     removeHome && [`the home ${tilde(ctx, home)}: logins, Claude memory and sessions, settings, installed tools`, ...contents(home).map((l) => `    ${l}`)].join("\n"),
     recordFiles.length && `its record in ${tilde(ctx, record)}: ${recordFiles.join(", ")}`,
   ].filter(Boolean) as string[];
@@ -58,7 +54,6 @@ export async function del(ctx: Context, name: string, opts: DeleteOptions): Prom
   }
 
   if (p.container) await docker(ctx, ["rm", p.container.name]);
-  if (hasVolume) await docker(ctx, ["volume", "rm", volume!]);
   if (removeHome) {
     rmSync(home, { recursive: true, force: true });
     if (removeRecord) rmSync(record, { recursive: true, force: true });

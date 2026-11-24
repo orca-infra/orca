@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, expect, type Browser, type Page } from "playwright/test";
-import { workspaceFile } from "../../features";
+import { workspaceFile } from "../../workspace-file";
 import { fakeContext } from "../support/fake";
 
 const root = mkdtempSync(join(tmpdir(), "orca-editor-"));

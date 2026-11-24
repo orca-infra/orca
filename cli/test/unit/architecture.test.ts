@@ -80,3 +80,14 @@ for (const [what, owner, pattern] of OWNED)
     const elsewhere = files.filter((f) => !allowed.has(moduleOf(f)) && pattern.test(code(f))).map((f) => relative(CLI, join(CLI, f)));
     expect(elsewhere).toEqual([]);
   });
+
+test("container-features.md names every feature and mount in the code, and the files it cites exist", async () => {
+  const { CREATION } = await import("../../creation");
+  const { WORKSPACE_FILE } = await import("../../workspace-file");
+  const { mounts } = await import("../../container-spec");
+  const doc = readFileSync(join(CLI, "../container-features.md"), "utf8");
+  const named = [...CREATION.map((f) => f.id), WORKSPACE_FILE, ...mounts({ folder: "", home: "" }).map((m) => m.target)];
+  expect(named.filter((n) => !doc.includes(`\`${n}\``))).toEqual([]);
+  const cited = [...doc.matchAll(/`((?:cli|image)\/[\w./-]+)`/g)].map((m) => m[1]);
+  expect(cited.filter((p) => !Bun.file(join(CLI, "..", p)).size)).toEqual([]);
+});

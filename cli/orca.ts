@@ -16,7 +16,7 @@ import { update } from "./commands/update";
 import { BUILT, VERSION } from "./release";
 import { OrcaError } from "./errors";
 import { realContext } from "./context";
-import { optionalIds } from "./features";
+import { optionalIds } from "./creation";
 import { serve } from "./server/serve";
 import { drawView, show, VIEW_COMMAND } from "./ui/show";
 import { uiLogFile } from "./state";

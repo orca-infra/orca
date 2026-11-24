@@ -5,6 +5,7 @@ import {
   containerName,
   docker,
   homeDir,
+  imageName,
   inspectImage,
   latestImage,
   listContainers,
@@ -132,11 +133,14 @@ export async function start(ctx: Context, path: string, opts: StartOptions): Pro
   }
 
   const latest = await latestImage(ctx);
-  if (!latest) throw new OrcaError("The orca image isn't on this Mac yet.", "Run: orca update");
+  if (!latest)
+    throw readConfig(ctx).image
+      ? new OrcaError(`The image config.json pins, ${imageName(ctx)}, isn't on this Mac.`, `Download it: docker pull ${imageName(ctx)}, or remove "image" from ${tilde(ctx, join(ctx.orcaDir, "config.json"))}`)
+      : new OrcaError("The orca image isn't on this Mac yet.", "Run: orca update");
   if (opts.up && !latest.up) throw new OrcaError("The orca image is from before orca up.", "Run: orca update");
   ctx.print(`Creating ${name}: ${tilde(ctx, folder)}, home in ${tilde(ctx, home)}`);
   if (newHome) await applyCreation(ctx, home, without);
-  const create = ["--name", container, "--label", `orca.project=${name}`, ...containerArgs({ name, folder, home, network, resources: effective(ctx, name) }), "orca:latest"];
+  const create = ["--name", container, "--label", `orca.project=${name}`, ...containerArgs({ name, folder, home, network, resources: effective(ctx, name) }), imageName(ctx)];
   if (!latest.terminals) {
     // An image from before terminals: its main process is the first window's shell
     ctx.print("This image has no terminals yet; for them: orca update, then orca start --fresh");

@@ -135,6 +135,22 @@ test("update pulls the published image and names it orca:latest", async () => {
   expect(t.output()).toContain("updated");
 });
 
+test("update keeps the image it replaces as orca:previous, and says how to go back to it", async () => {
+  const t = fakeContext({ latest: "sha256:old", pulled: "sha256:new" });
+  await update(t.ctx, { self: false });
+  expect(t.calls).toContainEqual(["tag", "sha256:old", "orca:previous"]);
+  expect(t.state.tags?.["orca:previous"]).toBe("sha256:old");
+  expect(t.output()).toContain('{"image": "orca:previous"}');
+});
+
+test("update with a pinned image says new containers still use the pinned one", async () => {
+  const t = fakeContext({ latest: "sha256:old", pulled: "sha256:new" });
+  mkdirSync(t.ctx.orcaDir, { recursive: true });
+  writeFileSync(join(t.ctx.orcaDir, "config.json"), JSON.stringify({ image: "orca:previous" }));
+  await update(t.ctx, { self: false });
+  expect(t.output()).toContain("config.json pins orca:previous");
+});
+
 test("update says when the image was already current", async () => {
   const t = fakeContext({ latest: "sha256:new", pulled: "sha256:new" });
   await update(t.ctx, { self: false });

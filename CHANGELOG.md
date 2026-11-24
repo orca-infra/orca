@@ -7,6 +7,7 @@ What people using Orca should know, newest first: anything they have to do (mark
 - When Docker Desktop's file sharing stops working, a container loses its folders from the Mac (`/workspace` and `~`), so logins, `claude` and everything else in it seem to vanish. `orca start` now says that's what happened, and that restarting Docker Desktop is the fix (your files on the Mac are untouched), instead of listing Docker's error as a terminal.
 - When a step `orca start` can do without fails (the forwards proxy, the project's own network, applying box settings), it says what failed and what going on without it means, and asks whether to start anyway, instead of failing.
 - The workspace file now says which repos it includes and what its search skips (hidden folders, `node_modules`). If it's yours (orca's first line removed), `orca start` says once when it doesn't list a repo, or lists a folder that's gone.
+- A broken image can be gone back from: `orca update` keeps the image it replaces as `orca:previous`, published images are also tagged by date and commit, and `"image"` in `~/.orca/config.json` makes new containers from either.
 - FALLBACKS.md: how to work in a project with plain `docker` commands when orca doesn't work.
 - `orca start --fresh` and `orca delete` no longer remove the `node_modules` volume that containers made before 2026-10-22 had. Once those containers are recreated, remove any such volumes yourself: `docker volume ls`, then `docker volume rm <name>`.
 

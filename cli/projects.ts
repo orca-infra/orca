@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { readConfig } from "./config";
 import { OrcaError, projectsDir, type Context } from "./context";
 import { lostFolders, parseContainer, type Container } from "./docker";
 
@@ -90,8 +91,11 @@ export async function listContainers(ctx: Context): Promise<Container[]> {
 /** `terminals`, `up`: made from a Dockerfile with orca's terminals, and with orca up (its labels) */
 export type Image = { id: string; created: string; terminals: boolean; up: boolean };
 
+/** The image new containers are made from: orca:latest, unless config.json pins another */
+export const imageName = (ctx: Context) => readConfig(ctx).image ?? "orca:latest";
+
 export async function latestImage(ctx: Context): Promise<Image | null> {
-  return inspectImage(ctx, "orca:latest");
+  return inspectImage(ctx, imageName(ctx));
 }
 
 export async function inspectImage(ctx: Context, ref: string): Promise<Image | null> {

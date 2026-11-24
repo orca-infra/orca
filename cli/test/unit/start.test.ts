@@ -379,3 +379,21 @@ test("box settings that can't be applied are skipped on a yes, saying what it st
   expect(t.output()).toContain("the memory and CPUs it has (4 GB of memory, 2 CPUs)");
   expect(t.attached).toHaveLength(1);
 });
+
+test("an image pinned in config.json is the one new containers are made from", async () => {
+  const t = fakeContext({ tags: { "orca:previous": "sha256:old" } });
+  mkdirSync(t.ctx.orcaDir, { recursive: true });
+  writeFileSync(join(t.ctx.orcaDir, "config.json"), JSON.stringify({ image: "orca:previous" }));
+  await start(t.ctx, folder(t.home), {});
+  expect(t.calls.find((c) => c[0] === "run")!.at(-1)).toBe("orca:previous");
+});
+
+test("a pinned image that isn't on this Mac says how to get it, or unpin it", async () => {
+  const t = fakeContext();
+  mkdirSync(t.ctx.orcaDir, { recursive: true });
+  writeFileSync(join(t.ctx.orcaDir, "config.json"), JSON.stringify({ image: "ghcr.io/orca-infra/orca:2026-11-01-abc1234" }));
+  await expect(start(t.ctx, folder(t.home), {})).rejects.toMatchObject({
+    message: expect.stringContaining("isn't on this Mac"),
+    fix: expect.stringContaining("docker pull ghcr.io/orca-infra/orca:2026-11-01-abc1234"),
+  });
+});

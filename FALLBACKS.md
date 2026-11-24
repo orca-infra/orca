@@ -38,7 +38,12 @@ Exiting keeps the container; `docker start -ai orca-fallback` goes back in, and 
 
 ## An older image
 
-When the image is what's broken: any command above with another image in place of `orca:latest`. `docker images` lists the ones on this Mac (an older one stays while a container still uses it).
+When the image is what's broken: any command above with another image in place of `orca:latest`:
+
+- `orca:previous`: the one the last `orca update` replaced
+- a published one, by date and commit: `ghcr.io/orca-infra/orca:<yyyy-mm-dd>-<commit>`, listed at https://github.com/orca-infra/orca/pkgs/container/orca (`docker pull` it first)
+
+For `orca` itself to make containers from it, put it in `~/.orca/config.json`, e.g. `{"image": "orca:previous"}`, then recreate the project's container: `orca stop <project>`, then `orca start --fresh`. Remove `image` to go back to `orca:latest`.
 
 ## Docker Desktop itself
 

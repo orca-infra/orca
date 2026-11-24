@@ -1,6 +1,7 @@
 import { chmodSync, renameSync, writeFileSync } from "node:fs";
 import { OrcaError, type Context } from "../context";
-import { docker, latestImage } from "../projects";
+import { readConfig } from "../config";
+import { docker, imageName, inspectImage } from "../projects";
 
 declare const ORCA_VERSION: string | undefined, ORCA_REPO: string | undefined, ORCA_BUILT: string | undefined;
 /** The commit this `orca` was built from; "dev" when running from source. */
@@ -21,7 +22,7 @@ export const RELEASES = `https://github.com/${REPO}/releases`;
 export type SelfUpdate = { version: string; built: string; execPath: string; fetch: typeof fetch; platform: string; arch: string };
 
 export async function update(ctx: Context, opts: { self: SelfUpdate | false }): Promise<void> {
-  const before = (await latestImage(ctx))?.id;
+  const before = (await inspectImage(ctx, "orca:latest"))?.id;
   ctx.print(`Image: checking ${REMOTE_IMAGE}…`);
   // In the terminal, so Docker shows its download progress
   if ((await ctx.docker.attach(["pull", REMOTE_IMAGE])) !== 0) {
@@ -29,8 +30,17 @@ export async function update(ctx: Context, opts: { self: SelfUpdate | false }): 
     throw new OrcaError(`Couldn't download ${REMOTE_IMAGE} (Docker's message is above).`, "If the image is private: gh auth token | docker login ghcr.io -u <github-user> --password-stdin");
   }
   await docker(ctx, ["tag", REMOTE_IMAGE, "orca:latest"]);
-  const after = (await latestImage(ctx))?.id;
-  ctx.print(after === before ? "Image: up to date." : "Image: updated. Containers switch to it when recreated; `orca start` says when one is out of date.");
+  const after = (await inspectImage(ctx, "orca:latest"))?.id;
+  if (after === before) ctx.print("Image: up to date.");
+  else {
+    ctx.print("Image: updated. Containers switch to it when recreated; `orca start` says when one is out of date.");
+    // The one it replaces stays, to go back to if the new one is broken
+    if (before) {
+      await docker(ctx, ["tag", before, "orca:previous"]);
+      ctx.print(`  The image it replaces is kept as orca:previous. To make containers from it again: {"image": "orca:previous"} in ~/.orca/config.json`);
+    }
+  }
+  if (readConfig(ctx).image) ctx.print(`  config.json pins ${imageName(ctx)}, so new containers are made from that; remove "image" from it to use orca:latest.`);
 
   if (opts.self) await updateSelf(ctx, opts.self);
 }

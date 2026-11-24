@@ -18,6 +18,11 @@ export type Config = {
   without?: string[];
   /** Box settings for projects without their own (orca settings --defaults): e.g. {"memory": "12g", "cpus": 6} */
   boxSettings?: { memory?: string; cpus?: number };
+  /**
+   * The image new containers are made from, to go back to an older one: "orca:previous" (the one
+   * the last orca update replaced) or a published tag. Unset: orca:latest.
+   */
+  image?: string;
 };
 
 const DEFAULTS: Config = { proxyPort: 7320, servePort: 7321 };
@@ -39,6 +44,8 @@ export function readConfig(ctx: Context): Config {
       throw new OrcaError(`${key} in ${tilde(ctx, file)} must be a port number (1–65535).`);
   if (config.terminal !== undefined && (!Array.isArray(config.terminal) || config.terminal.length === 0 || config.terminal.some((a) => typeof a !== "string")))
     throw new OrcaError(`terminal in ${tilde(ctx, file)} must be a list of strings, e.g. ["my-terminal", "-e", "{command}"].`);
+  if (config.image !== undefined && (typeof config.image !== "string" || !config.image.trim()))
+    throw new OrcaError(`image in ${tilde(ctx, file)} must be an image name, e.g. "orca:previous".`);
   if (config.without !== undefined) {
     if (!Array.isArray(config.without) || config.without.some((a) => typeof a !== "string"))
       throw new OrcaError(`without in ${tilde(ctx, file)} must be a list of feature names, e.g. ["git-identity"].`);

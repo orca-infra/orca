@@ -127,6 +127,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Tag both platforms as latest
+      # :latest moves; the dated tag stays, so a broken image can be gone back from
+      # (FALLBACKS.md, and "image" in ~/.orca/config.json)
+      - name: Tag both platforms as latest, and by date and commit
         working-directory: /tmp/digests
-        run: docker buildx imagetools create -t "$IMAGE:latest" $(printf "$IMAGE@sha256:%s " *)
+        run: |
+          docker buildx imagetools create -t "$IMAGE:latest" -t "$IMAGE:$(date -u +%Y-%m-%d)-${GITHUB_SHA::7}" \
+            $(printf "$IMAGE@sha256:%s " *)

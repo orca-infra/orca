@@ -38,6 +38,8 @@ export type FakeState = {
   /** Images made before terminals (no orca.terminals label), or before orca up (no orca.up) */
   noTerminals?: string[];
   noUp?: string[];
+  /** Image names besides orca:latest, and the ids they point at (e.g. orca:previous) */
+  tags?: Record<string, string>;
   /** what `docker pull` makes orca:latest's remote tag point at */
   pulled?: string;
   failPull?: boolean;
@@ -106,7 +108,7 @@ export function fakeDocker(state: FakeState) {
       }
       if (cmd === "image" && rest[0] === "inspect") {
         const ref = rest[rest.length - 1];
-        const id = ref === "orca:latest" ? state.latest : ref;
+        const id = ref === "orca:latest" ? state.latest : ref.startsWith("sha256:") ? ref : state.tags?.[ref];
         if (!id) return fail("No such image");
         return ok(JSON.stringify([{ Id: id, Created: state.created[id] ?? "2026-01-01T00:00:00Z", Config: { Labels: imageLabels(id) } }]));
       }
@@ -181,7 +183,9 @@ export function fakeDocker(state: FakeState) {
       if (cmd === "exec" && rest.some((a) => a.endsWith("root.crt"))) return ok("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");
       if (cmd === "exec") return ok();
       if (cmd === "tag") {
-        if (state.pulled) state.latest = state.pulled;
+        if (rest[1] === "orca:latest") {
+          if (state.pulled) state.latest = state.pulled;
+        } else state.tags = { ...state.tags, [rest[1]]: rest[0] };
         return ok();
       }
       return fail(`fake docker: unhandled ${args.join(" ")}`);

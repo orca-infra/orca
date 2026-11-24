@@ -9,7 +9,8 @@ import { applyCreation, checkWithout, containerArgs, mounts, workspaceFile } fro
 import { applySettings, describeResources, effective } from "../box-settings";
 import { allForwards, ensureNetwork, syncProxy } from "../proxy";
 import { beforeHomes, checkSupported, hasTerminals, TERMINALS } from "../compat";
-import { activity, checkReady, describe, keepUp, listTerminals, nextName, terminalArgs } from "../terminals";
+import { activity, checkReady, describe, keepUp, listTerminals, nextName } from "../terminals";
+import { terminalArgs } from "../in-container";
 import { containerName, CURRENT_IMAGE, label, PROXY } from "../names";
 import { homeDir } from "../state";
 import { listContainers, type Container } from "../containers";

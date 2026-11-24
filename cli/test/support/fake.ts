@@ -176,25 +176,23 @@ export function fakeDocker(state: FakeState) {
           stdout: "OCI runtime exec failed: exec failed: unable to start container process: current working directory is outside of container mount namespace root -- possible container breakout detected: unknown\n",
           stderr: "",
         };
-      // What a terminal needs, as orca checks it (checkReady): the folders it mounts
-      if (cmd === "exec" && rest.some((a) => a.includes("|| echo 'missing"))) {
+      // What orca runs in containers, known by name (in-container.ts); each answers with its name first
+      const ran = cmd === "exec" ? /^echo 'orca-ran ([\w-]+)'/.exec(rest[rest.indexOf("-c") + 1] ?? "")?.[1] : undefined;
+      if (ran) {
         const c = find(rest[0]);
-        return ok(["orca-ran", ...(c?.missing ?? []).map((m) => `missing ${m}`)].join("\n") + "\n");
+        const out = (lines: string[], code = 0, stderr = "") => ({ code, stdout: [`orca-ran ${ran}`, ...lines].map((l) => l + "\n").join(""), stderr });
+        if (ran === "ready") return out((c?.missing ?? []).map((m) => `missing ${m}`));
+        // The mark and the terminals together
+        if (ran === "activity") return out([...(c?.up ? ["up"] : []), ...(c?.terminals ?? [])], c?.terminals?.length ? 0 : 1, c?.terminals?.length ? "" : "no server running");
+        if (ran === "keep-up") {
+          if (!c?.running || c.labels?.["orca.up"] !== "1") return { code: 1, stdout: "", stderr: "touch: cannot touch '/run/orca/up': No such file or directory" };
+          c.up = true;
+          return out([]);
+        }
+        // The proxy's certificate authority, as Caddy makes it
+        if (ran === "proxy-ca") return out(["-----BEGIN CERTIFICATE-----", "fake", "-----END CERTIFICATE-----"]);
+        return out([]);
       }
-      // The mark and the terminals together, as orca asks for them (terminals.ts)
-      if (cmd === "exec" && rest.some((a) => a.includes("list-sessions"))) {
-        const c = find(rest[0]);
-        const lines = ["orca-ran", ...(c?.up ? ["up"] : []), ...(c?.terminals ?? [])];
-        return { code: c?.terminals?.length ? 0 : 1, stdout: lines.map((l) => l + "\n").join(""), stderr: c?.terminals?.length ? "" : "no server running" };
-      }
-      if (cmd === "exec" && rest.includes("touch")) {
-        const c = find(rest[0]);
-        if (!c?.running || c.labels?.["orca.up"] !== "1") return fail("touch: cannot touch '/run/orca/up': No such file or directory");
-        c.up = true;
-        return ok();
-      }
-      // The proxy's certificate authority, as Caddy makes it
-      if (cmd === "exec" && rest.some((a) => a.endsWith("root.crt"))) return ok("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");
       if (cmd === "exec") return ok();
       if (cmd === "tag") {
         const id = resolve(rest[0]);

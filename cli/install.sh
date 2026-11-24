@@ -1,11 +1,13 @@
 #!/bin/bash
 # Installs the orca command:
 #   curl -fsSL https://raw.githubusercontent.com/orca-infra/orca/main/cli/install.sh | bash
+# or a given build, to go back to one (its commit, from a cli-<commit> release):
+#   curl -fsSL https://raw.githubusercontent.com/orca-infra/orca/main/cli/install.sh | bash -s -- <commit>
 #
-# Downloads this machine's build from the repo's latest release (CI publishes each build as
-# its own release, cli-<commit>), checks it against its published checksum, and puts it in the first of these folders that's on PATH and
-# writable: /opt/homebrew/bin, /usr/local/bin, ~/.local/bin. Afterwards `orca update`
-# keeps it current.
+# Downloads this machine's build from the repo's latest release, or the one asked for (CI
+# publishes each build as its own release, cli-<commit>), checks it against its published
+# checksum, and puts it in the first of these folders that's on PATH and writable:
+# /opt/homebrew/bin, /usr/local/bin, ~/.local/bin. Afterwards `orca update` keeps it current.
 set -euo pipefail
 
 RELEASES="https://github.com/orca-infra/orca/releases"
@@ -32,9 +34,10 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 # The version first, then everything from that one release, so a build CI is publishing
 # right now can't get mixed into this download
-version=$(curl -fsSL "$RELEASES/latest/download/version")
+version=${1:-$(curl -fsSL "$RELEASES/latest/download/version")}
 echo "Downloading orca $version for $os-$arch (about 70 MB; GitHub can take a minute)…"
-curl -fL --progress-bar "$RELEASES/download/cli-$version/$asset" -o "$tmp/orca"
+curl -fL --progress-bar "$RELEASES/download/cli-$version/$asset" -o "$tmp/orca" \
+    || { echo "✗ There's no build cli-$version for $os-$arch. Releases: $RELEASES" >&2; exit 1; }
 curl -fsSL "$RELEASES/download/cli-$version/$asset.sha256" -o "$tmp/orca.sha256"
 echo "Checking it against its published checksum…"
 

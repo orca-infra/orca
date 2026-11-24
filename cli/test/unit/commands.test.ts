@@ -186,6 +186,9 @@ test("update replaces orca with the published build after checking its checksum"
   await update(t.ctx, { self: s.opts });
   expect(readFileSync(s.execPath, "utf8")).toBe("new binary");
   expect(t.output()).toContain("aaa → bbb");
+  // The one it replaced stays beside it, to go back to
+  expect(readFileSync(`${s.execPath}.previous`, "utf8")).toBe("old binary");
+  expect(t.output()).toContain(`mv ${s.execPath}.previous ${s.execPath}`);
 });
 
 test("update refuses a build whose checksum doesn't match", async () => {

@@ -1,4 +1,4 @@
-import { chmodSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, renameSync, writeFileSync } from "node:fs";
 import { OrcaError, type Context } from "../context";
 import { readConfig } from "../config";
 import { docker, imageName, inspectImage } from "../projects";
@@ -68,14 +68,18 @@ async function updateSelf(ctx: Context, s: SelfUpdate) {
   if (actual !== expected) throw new OrcaError(`The downloaded orca doesn't match its published checksum; not installing it.`);
 
   const next = `${s.execPath}.new`;
+  // The one it replaces stays beside it, to go back to if the new one is broken
+  const previous = `${s.execPath}.previous`;
   try {
     writeFileSync(next, binary);
     chmodSync(next, 0o755);
+    copyFileSync(s.execPath, previous);
     renameSync(next, s.execPath);
   } catch {
     throw new OrcaError(`Can't replace ${s.execPath}.`, `Reinstall it: curl -fsSL https://raw.githubusercontent.com/${REPO}/main/cli/install.sh | bash`);
   }
   ctx.print(`orca: updated (${s.version} → ${latest}).`);
+  ctx.print(`  The one it replaces is kept as ${previous}. To go back to it: mv ${previous} ${s.execPath}`);
 
   // Extra: a missing or unreadable changelog never fails an update that has already happened
   const changelog = await s.fetch(`${RELEASES}/download/cli-${latest}/CHANGELOG.md`).catch(() => null);

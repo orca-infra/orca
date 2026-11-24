@@ -8,6 +8,7 @@ What people using Orca should know, newest first: anything they have to do (mark
 - When a step `orca start` can do without fails (the forwards proxy, the project's own network, applying box settings), it says what failed and what going on without it means, and asks whether to start anyway, instead of failing.
 - The workspace file now says which repos it includes and what its search skips (hidden folders, `node_modules`). If it's yours (orca's first line removed), `orca start` says once when it doesn't list a repo, or lists a folder that's gone.
 - A broken image can be gone back from: `orca update` keeps the image it replaces as `orca:previous`, published images are also tagged by date and commit, and `"image"` in `~/.orca/config.json` makes new containers from either.
+- A broken `orca` can be gone back from too: `orca update` keeps the one it replaces as `orca.previous` beside it, and `install.sh` installs a given build: `… | bash -s -- <commit>`.
 - FALLBACKS.md: how to work in a project with plain `docker` commands when orca doesn't work.
 - `orca start --fresh` and `orca delete` no longer remove the `node_modules` volume that containers made before 2026-10-22 had. Once those containers are recreated, remove any such volumes yourself: `docker volume ls`, then `docker volume rm <name>`.
 

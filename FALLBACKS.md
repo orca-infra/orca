@@ -45,6 +45,14 @@ When the image is what's broken: any command above with another image in place o
 
 For `orca` itself to make containers from it, put it in `~/.orca/config.json`, e.g. `{"image": "orca:previous"}`, then recreate the project's container: `orca stop <project>`, then `orca start --fresh`. Remove `image` to go back to `orca:latest`.
 
+## An older `orca`
+
+When `orca` itself is what's broken: the one the last `orca update` replaced is beside it, as `orca.previous` (`which orca` shows where): `mv "$(which orca).previous" "$(which orca)"`. Or install any published build by its commit (from https://github.com/orca-infra/orca/releases, `cli-<commit>`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/orca-infra/orca/main/cli/install.sh | bash -s -- <commit>
+```
+
 ## Docker Desktop itself
 
 Restart it: quit it from its menu bar icon and open it again. Project folders and homes are files on the Mac, untouched by it.

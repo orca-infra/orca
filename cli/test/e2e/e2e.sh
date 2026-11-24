@@ -8,7 +8,7 @@
 set -euo pipefail
 ORCA="$(realpath "$1")"
 shift
-SECTIONS=("${@:-projects terminals update forwards dashboard}")
+SECTIONS=("${@:-projects terminals update forwards dashboard fallbacks}")
 read -ra SECTIONS <<<"${SECTIONS[*]}"
 
 fail() { echo "✗ $*" >&2; exit 1; }
@@ -219,8 +219,31 @@ dashboard() {
   kill $serve_pid
 }
 
+# FALLBACKS.md's commands, as written there but without a terminal (-it) and with checks in place
+# of an interactive shell: they must work with nothing from orca but its image
+fallbacks() {
+  local home="$T/home"
+  mkdir -p "$home" && chmod 777 "$home" && touch "$T/dev/demo/in-folder" "$home/in-home"
+  local tools='command -v claude && command -v gh && command -v git'
+
+  step "your folder and home"
+  docker run --rm -v "$T/dev/demo:/workspace" -v "$home:/home/node" orca:latest \
+    bash -c "test -f /workspace/in-folder && test -f ~/in-home && $tools" >/dev/null || fail "the folder, the home or a tool is missing"
+
+  step "your folder, a fresh home"
+  docker run --rm -v "$T/dev/demo:/workspace" orca:latest \
+    bash -c "test -f /workspace/in-folder && touch ~/writable && $tools" >/dev/null || fail "the folder, a writable home or a tool is missing"
+
+  step "no folders from the Mac: a clone in ~, kept when the container stops"
+  docker rm -f orca-fallback-e2e >/dev/null 2>&1 || true
+  local work='if [ -e ~/cloned ]; then echo again; else git clone -q --depth 1 https://github.com/orca-infra/orca ~/orca && test -f ~/orca/README.md && touch ~/cloned && echo first; fi'
+  [ "$(docker run --name orca-fallback-e2e orca:latest bash -c "$work")" = first ] || fail "cloning in a container with no Mac folders"
+  [ "$(docker start -a orca-fallback-e2e)" = again ] || fail "the clone should still be there when the container starts again"
+  docker rm -f orca-fallback-e2e >/dev/null
+}
+
 for s in "${SECTIONS[@]}"; do
-  declare -F "$s" >/dev/null || fail "no section \"$s\"; sections: projects terminals update forwards dashboard"
+  declare -F "$s" >/dev/null || fail "no section \"$s\"; sections: projects terminals update forwards dashboard fallbacks"
   echo; echo "== $s"
   fresh
   "$s"
